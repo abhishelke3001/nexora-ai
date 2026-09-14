@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
+import BtcChart from "../components/BtcChart";
 
 const assets = [
   "BTC/USD",
@@ -36,9 +37,16 @@ export default function AnalyzePage() {
     setData(null);
 
     try {
-      const res = await fetch(
-        `/api/analyze?symbol=${encodeURIComponent(symbol)}&mode=${encodeURIComponent(mode)}`
-      );
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          symbol,
+          mode,
+        }),
+      });
 
       const result = await res.json();
       setData(result);
@@ -299,13 +307,36 @@ export default function AnalyzePage() {
               </div>
             </div>
 
+            <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-3">
+              <div className="mb-3 flex items-center justify-between px-3 pt-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-gray-500">
+                    LIVE MARKET CHART
+                  </p>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {symbol} · 1H · Twelve Data Live
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-green-400">
+                  <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+                  LIVE
+                </div>
+              </div>
+
+              <BtcChart
+                symbol={symbol}
+                timeframe="1H"
+                signal={data?.ai}
+              />
+            </div>
+
             <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-6">
               <p className="text-xs text-gray-500">
                 AI REASONING
               </p>
 
               <p className="mt-3 leading-7 text-gray-200">
-                {ai.reason}
+                {ai.reasoning ?? ai.reason ?? "—"}
               </p>
 
               <div className="mt-6 border-t border-white/10 pt-5">
