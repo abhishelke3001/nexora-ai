@@ -13,7 +13,7 @@ export default function StrategiesPage() {
         cache: "no-store",
       });
       const json = await r.json();
-      setData(json.strategies || []);
+      setData(Array.isArray(json) ? json : (json.strategies || []));
     } catch (e) {
       console.error(e);
     } finally {
