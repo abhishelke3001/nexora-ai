@@ -8,6 +8,7 @@ const yahooFinance = new YahooFinance({
 const symbols = [
   { symbol: "^NSEI", name: "NIFTY 50", type: "INDEX" },
   { symbol: "^BSESN", name: "SENSEX", type: "INDEX" },
+  { symbol: "^NSEBANK", name: "NIFTY BANK", type: "INDEX" },
   { symbol: "RELIANCE.NS", name: "Reliance Industries", type: "STOCK" },
   { symbol: "TCS.NS", name: "TCS", type: "STOCK" },
   { symbol: "HDFCBANK.NS", name: "HDFC Bank", type: "STOCK" },
