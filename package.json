@@ -9,9 +9,18 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.116.0",
+    "ccxt": "^4.5.78",
+    "lightweight-charts": "^5.2.1",
+    "lucide-react": "^1.46.0",
     "next": "16.3.5",
+    "node-telegram-bot-api": "^2.1.0",
+    "openai": "^7.15.0",
+    "protobufjs": "^7.6.6",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "technicalindicators": "^3.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
