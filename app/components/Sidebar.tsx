@@ -18,7 +18,7 @@ const items = [
   { label: "Indian Markets", href: "/indian-markets", icon: LineChart },
   { label: "AI Analyze", href: "/analyze", icon: BrainCircuit },
   { label: "Strategies", href: "/strategies", icon: Zap },
-  { label: "Earth Radar", href: "/radar", icon: Globe2 },
+  { label: "Earth Radar", href: "/earth-radar", icon: Globe2 },
   { label: "Trades", href: "/trades", icon: BriefcaseBusiness },
   { label: "Community", href: "/community", icon: Users },
 ];
