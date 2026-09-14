@@ -43,6 +43,7 @@ type Candle = CandlestickData<Time>;
 export default function BtcChart({
   symbol = "BTC/USD",
   timeframe = "1H",
+  signal,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -295,9 +296,17 @@ export default function BtcChart({
   }, [symbol, timeframe]);
 
   return (
-    <div
-      ref={containerRef}
-      className="h-[500px] w-full overflow-hidden rounded-xl"
-    />
+    <div className="relative">
+      <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-lg border border-red-500/30 bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+        LIVE
+        <span className="text-white/60">BTC/USD</span>
+      </div>
+
+      <div
+        ref={containerRef}
+        className="h-[500px] w-full overflow-hidden rounded-xl"
+      />
+    </div>
   );
 }
