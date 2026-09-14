@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
   try {
-    const { symbol = "BTC/USD" } = await request.json();
+    const { searchParams } = new URL(request.url);
+    const symbol = searchParams.get("symbol") || "BTC/USD";
 
     const apiKey = process.env.TWELVE_DATA_API_KEY;
 
@@ -31,14 +32,14 @@ export async function GET(request: Request) {
       change > 0.5 ? "BULLISH" : change < -0.5 ? "BEARISH" : "WAIT";
 
     const message = [
-      `NEXORA AI ALERT`,
-      ``,
+      "NEXORA AI ALERT",
+      "",
       `Asset: ${symbol}`,
       `Price: $${price.toLocaleString()}`,
       `24H: ${change.toFixed(2)}%`,
       `Signal: ${direction}`,
-      ``,
-      `Source: Twelve Data Live Market Data`,
+      "",
+      "Source: Twelve Data Live Market Data",
     ].join("\n");
 
     return NextResponse.json({
@@ -51,6 +52,7 @@ export async function GET(request: Request) {
     });
   } catch (error: any) {
     console.error(error);
+
     return NextResponse.json(
       { error: error?.message || "Telegram alert data request failed." },
       { status: 502 }
