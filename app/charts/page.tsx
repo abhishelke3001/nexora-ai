@@ -5,9 +5,9 @@ import BtcChart from "../components/BtcChart";
 import Sidebar from "../components/Sidebar";
 
 const symbols = [
-  "BTC/USDT",
-  "ETH/USDT",
-  "SOL/USDT",
+  "BTC/USD",
+  "ETH/USD",
+  "SOL/USD",
   "EUR/USD",
   "GBP/USD",
   "USD/JPY",
@@ -19,7 +19,7 @@ const symbols = [
 const timeframes = ["15M", "1H", "4H", "1D"];
 
 export default function ChartsPage() {
-  const [symbol, setSymbol] = useState("BTC/USDT");
+  const [symbol, setSymbol] = useState("BTC/USD");
   const [timeframe, setTimeframe] = useState("1H");
 
   return (
@@ -56,7 +56,7 @@ export default function ChartsPage() {
               <div>
                 <div className="text-lg font-semibold">{symbol}</div>
                 <div className="text-xs text-gray-500">
-                  {symbol.includes("/") && symbol.endsWith("USDT") ? "Binance" : "Twelve Data"} · {timeframe}
+                  {symbol.includes("/") && symbol.endsWith("USD") ? "Twelve Data" : "Twelve Data"} · {timeframe}
                 </div>
               </div>
 

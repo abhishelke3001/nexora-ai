@@ -1,81 +1,59 @@
 import { NextResponse } from "next/server";
-import ccxt from "ccxt";
 
 export async function POST(request: Request) {
   try {
-    const { symbol = "BTC/USDT" } = await request.json();
+    const { symbol = "BTC/USD" } = await request.json();
 
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+    const apiKey = process.env.TWELVE_DATA_API_KEY;
 
-    if (!token || !chatId) {
+    if (!apiKey) {
       return NextResponse.json(
-        { error: "Telegram credentials are not configured" },
+        { error: "TWELVE_DATA_API_KEY is not configured." },
         { status: 500 }
       );
     }
-
-    const exchange = new ccxt.binance();
-    const ticker = await exchange.fetchTicker(symbol);
-
-    const price = Number(ticker.last);
-    const change = Number(ticker.percentage);
-
-    const direction =
-      change > 0.5 ? "🟢 BULLISH" :
-      change < -0.5 ? "🔴 BEARISH" :
-      "🟡 WAIT";
-
-    const message = [
-      "🤖 NEXORA AI MARKET ALERT",
-      "",
-      `Asset: ${symbol}`,
-      `Price: $${price.toLocaleString()}`,
-      `24H Change: ${change.toFixed(2)}%`,
-      "",
-      `Signal: ${direction}`,
-      "",
-      "Source: Binance Live Market Data",
-      "",
-      "Market Intelligence. One Clear Decision."
-    ].join("\n");
 
     const response = await fetch(
-      `https://api.telegram.org/bot${token}/sendMessage`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: message,
-        }),
-      }
+      `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(apiKey)}`,
+      { cache: "no-store" }
     );
 
-    const result = await response.json();
+    const ticker = await response.json();
 
-    if (!response.ok || !result.ok) {
-      return NextResponse.json(
-        { error: result.description || "Telegram send failed" },
-        { status: 500 }
-      );
+    if (!response.ok || ticker.status === "error") {
+      throw new Error(ticker.message || `Failed to fetch ${symbol}`);
     }
+
+    const price = Number(ticker.close);
+    const change = Number(ticker.percent_change);
+
+    const direction =
+      change > 0.5 ? "BULLISH" : change < -0.5 ? "BEARISH" : "WAIT";
+
+    const message = [
+      `NEXORA AI ALERT`,
+      ``,
+      `Asset: ${symbol}`,
+      `Price: $${price.toLocaleString()}`,
+      `24H: ${change.toFixed(2)}%`,
+      `Signal: ${direction}`,
+      ``,
+      `Source: Twelve Data Live Market Data`,
+    ].join("\n");
 
     return NextResponse.json({
       success: true,
+      message,
       symbol,
       price,
       change,
-      signal: direction,
+      direction,
     });
-  } catch (error) {
-    console.error("Telegram alert error:", error);
-
+  } catch (error: any) {
+    console.error(error);
     return NextResponse.json(
-      { error: "Failed to create market alert" },
-      { status: 500 }
+      { error: error?.message || "Telegram alert data request failed." },
+      { status: 502 }
     );
   }
 }

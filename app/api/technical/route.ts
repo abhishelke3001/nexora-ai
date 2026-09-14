@@ -1,28 +1,59 @@
 import { NextResponse } from "next/server";
-import ccxt from "ccxt";
-import { RSI, EMA, SMA, MACD, ATR } from "technicalindicators";
+import {
+  RSI,
+  EMA,
+  SMA,
+  MACD,
+  ATR,
+} from "technicalindicators";
 
 export async function GET() {
   try {
-    const exchange = new ccxt.binance();
+    const apiKey = process.env.TWELVE_DATA_API_KEY;
 
-    const candles = await exchange.fetchOHLCV(
-      "BTC/USDT",
-      "1h",
-      undefined,
-      250
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "TWELVE_DATA_API_KEY is not configured." },
+        { status: 500 }
+      );
+    }
+
+    const response = await fetch(
+      `https://api.twelvedata.com/time_series?symbol=BTC%2FUSD&interval=1h&outputsize=200&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`,
+      { cache: "no-store" }
     );
 
-    const opens = candles.map((c) => Number(c[1]));
-    const highs = candles.map((c) => Number(c[2]));
-    const lows = candles.map((c) => Number(c[3]));
-    const closes = candles.map((c) => Number(c[4]));
-    const volumes = candles.map((c) => Number(c[5]));
+    const result = await response.json();
 
-    const rsi = RSI.calculate({ values: closes, period: 14 }).at(-1);
-    const ema20 = EMA.calculate({ values: closes, period: 20 }).at(-1);
-    const ema50 = EMA.calculate({ values: closes, period: 50 }).at(-1);
-    const sma20 = SMA.calculate({ values: closes, period: 20 }).at(-1);
+    if (
+      !response.ok ||
+      result.status === "error" ||
+      !Array.isArray(result.values)
+    ) {
+      throw new Error(result.message || "Technical market data request failed.");
+    }
+
+    const values = result.values.slice().reverse();
+
+    const opens = values.map((c: any) => Number(c.open));
+    const highs = values.map((c: any) => Number(c.high));
+    const lows = values.map((c: any) => Number(c.low));
+    const closes = values.map((c: any) => Number(c.close));
+
+    const rsi = RSI.calculate({
+      values: closes,
+      period: 14,
+    });
+
+    const ema20 = EMA.calculate({
+      values: closes,
+      period: 20,
+    });
+
+    const sma20 = SMA.calculate({
+      values: closes,
+      period: 20,
+    });
 
     const macd = MACD.calculate({
       values: closes,
@@ -31,84 +62,32 @@ export async function GET() {
       signalPeriod: 9,
       SimpleMAOscillator: false,
       SimpleMASignal: false,
-    }).at(-1);
+    });
 
     const atr = ATR.calculate({
       high: highs,
       low: lows,
       close: closes,
       period: 14,
-    }).at(-1);
+    });
 
-    const currentVolume = volumes.at(-1) ?? 0;
-    const recentVolumes = volumes.slice(-20);
-    const averageVolume =
-      recentVolumes.reduce((a, b) => a + b, 0) / recentVolumes.length;
-
-    const price = closes.at(-1) ?? 0;
-    const previousClose = closes.at(-2) ?? price;
-
-    const trend =
-      price > (ema20 ?? price) && (ema20 ?? price) > (ema50 ?? price)
-        ? "BULLISH"
-        : price < (ema20 ?? price) && (ema20 ?? price) < (ema50 ?? price)
-        ? "BEARISH"
-        : "MIXED";
-
-    const momentum =
-      (rsi ?? 50) >= 60
-        ? "POSITIVE"
-        : (rsi ?? 50) <= 40
-        ? "NEGATIVE"
-        : "NEUTRAL";
+    const price = closes[closes.length - 1];
 
     return NextResponse.json({
-      symbol: "BTC/USDT",
-      timeframe: "1h",
-      source: "Binance",
-      candles: candles.length,
-      price: Number(price.toFixed(2)),
-      changePercent: Number(
-        (((price - previousClose) / previousClose) * 100).toFixed(3)
-      ),
-      indicators: {
-        rsi: Number((rsi ?? 0).toFixed(2)),
-        ema20: Number((ema20 ?? 0).toFixed(2)),
-        ema50: Number((ema50 ?? 0).toFixed(2)),
-        sma20: Number((sma20 ?? 0).toFixed(2)),
-        macd: macd
-          ? {
-              value: Number((macd.MACD ?? 0).toFixed(4)),
-              signal: Number((macd.signal ?? 0).toFixed(4)),
-              histogram: Number((macd.histogram ?? 0).toFixed(4)),
-            }
-          : null,
-        atr: Number((atr ?? 0).toFixed(2)),
-      },
-      volume: {
-        current: currentVolume,
-        average20: Number(averageVolume.toFixed(4)),
-        ratio: Number(
-          (averageVolume ? currentVolume / averageVolume : 0).toFixed(2)
-        ),
-      },
-      structure: {
-        trend,
-        momentum,
-      },
-      candle: {
-        open: opens.at(-1),
-        high: highs.at(-1),
-        low: lows.at(-1),
-        close: closes.at(-1),
-      },
+      symbol: "BTC/USD",
+      price,
+      rsi: rsi[rsi.length - 1],
+      ema20: ema20[ema20.length - 1],
+      sma20: sma20[sma20.length - 1],
+      macd: macd[macd.length - 1],
+      atr: atr[atr.length - 1],
+      source: "Twelve Data",
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error(error);
-
     return NextResponse.json(
-      { error: "Technical analysis failed" },
-      { status: 500 }
+      { error: error?.message || "Technical data request failed." },
+      { status: 502 }
     );
   }
 }

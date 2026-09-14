@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 
 const assets = [
-  "BTC/USDT",
-  "ETH/USDT",
-  "SOL/USDT",
-  "BNB/USDT",
-  "XRP/USDT",
+  "BTC/USD",
+  "ETH/USD",
+  "SOL/USD",
+  "BNB/USD",
+  "XRP/USD",
   "EUR/USD",
   "GBP/USD",
   "USD/JPY",
@@ -26,7 +26,7 @@ const analysisModes = [
 ];
 
 export default function AnalyzePage() {
-  const [symbol, setSymbol] = useState("BTC/USDT");
+  const [symbol, setSymbol] = useState("BTC/USD");
   const [mode, setMode] = useState("Technical");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -78,7 +78,7 @@ export default function AnalyzePage() {
             {symbol.includes("/")
               ? ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD"].includes(symbol)
                 ? "Real Twelve Data market data + real AI reasoning"
-                : "Real Binance market data + real AI reasoning"
+                : "Real Twelve Data market data + real AI reasoning"
               : "Real market data + real AI reasoning"}
           </p>
         </div>
@@ -117,7 +117,7 @@ export default function AnalyzePage() {
                   : "border-white/10 bg-[#0d1118] text-gray-400 hover:bg-white/5"
               }`}
             >
-              {asset.replace("/USDT", "")}
+              {asset.replace("/USD", "")}
             </button>
           ))}
         </div>
@@ -188,9 +188,9 @@ export default function AnalyzePage() {
                 </p>
 
                 <p className="mt-1 text-xs text-gray-500">
-                  {symbol.includes("/") && !symbol.endsWith("USDT")
+                  {symbol.includes("/") && !symbol.endsWith("USD")
                     ? "Twelve Data · 1H"
-                    : "Binance · 1H"}
+                    : "Twelve Data · 1H"}
                 </p>
               </div>
             </div>
@@ -231,7 +231,7 @@ export default function AnalyzePage() {
                     <p className="text-xs text-gray-500">ATR</p>
                     <p className="mt-1 font-medium">
                       {typeof (market?.indicators?.atr ?? data?.indicators?.atr) === "number"
-                        ? (market?.indicators?.atr ?? data?.indicators?.atr).toFixed(symbol.includes("/") && !symbol.endsWith("USDT") ? 5 : 2)
+                        ? (market?.indicators?.atr ?? data?.indicators?.atr).toFixed(symbol.includes("/") && !symbol.endsWith("USD") ? 5 : 2)
                         : "—"}
                     </p>
                   </div>
@@ -240,7 +240,7 @@ export default function AnalyzePage() {
                     <p className="text-xs text-gray-500">EMA 20</p>
                     <p className="mt-1 font-medium">
                       {typeof (market?.indicators?.ema20 ?? data?.indicators?.ema20) === "number"
-                        ? (market?.indicators?.ema20 ?? data?.indicators?.ema20).toFixed(symbol.includes("/") && !symbol.endsWith("USDT") ? 5 : 2)
+                        ? (market?.indicators?.ema20 ?? data?.indicators?.ema20).toFixed(symbol.includes("/") && !symbol.endsWith("USD") ? 5 : 2)
                         : "—"}
                     </p>
                   </div>
@@ -249,7 +249,7 @@ export default function AnalyzePage() {
                     <p className="text-xs text-gray-500">EMA 50</p>
                     <p className="mt-1 font-medium">
                       {typeof (market?.indicators?.ema50 ?? data?.indicators?.ema50) === "number"
-                        ? (market?.indicators?.ema50 ?? data?.indicators?.ema50).toFixed(symbol.includes("/") && !symbol.endsWith("USDT") ? 5 : 2)
+                        ? (market?.indicators?.ema50 ?? data?.indicators?.ema50).toFixed(symbol.includes("/") && !symbol.endsWith("USD") ? 5 : 2)
                         : "—"}
                     </p>
                   </div>

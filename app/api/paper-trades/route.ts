@@ -1,21 +1,27 @@
 import { NextResponse } from "next/server";
-import ccxt from "ccxt";
 
 export async function GET() {
   try {
-    const exchange = new ccxt.binance();
+    
 
-    const symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"];
+    const symbols = ["BTC/USD", "ETH/USD", "SOL/USD"];
 
     const prices = await Promise.all(
       symbols.map(async (symbol) => {
-        const ticker = await exchange.fetchTicker(symbol);
+        const ticker = await (async () => {
+          const key = process.env.TWELVE_DATA_API_KEY;
+          const r = await fetch(
+            `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key || "")}`,
+            { cache: "no-store" }
+          );
+          return r.json();
+        })();
 
         return {
           symbol,
           price: ticker.last,
           change24h: ticker.percentage,
-          source: "Binance",
+          source: "Twelve Data",
           updatedAt: new Date().toISOString(),
         };
       })

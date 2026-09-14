@@ -20,7 +20,7 @@ const timeframeMap: Record<string, string> = {
 };
 
 export default function BtcChart({
-  symbol = "BTC/USDT",
+  symbol = "BTC/USD",
   timeframe = "1H",
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -98,11 +98,11 @@ export default function BtcChart({
 
         if (cancelled) return;
 
-        if (!Array.isArray(result.data) || result.data.length === 0) {
+        if (!Array.isArray(result.candles) || result.candles.length === 0) {
           throw new Error("No candle data returned");
         }
 
-        const candles = result.data.map(
+        const candles = result.candles.map(
           (c: {
             time: number;
             open: number;
@@ -110,7 +110,7 @@ export default function BtcChart({
             low: number;
             close: number;
           }) => ({
-            time: Math.floor(c.time / 1000) as any,
+            time: c.time as any,
             open: c.open,
             high: c.high,
             low: c.low,

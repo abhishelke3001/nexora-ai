@@ -55,7 +55,7 @@ export default function StrategiesPage() {
                     <div>
                       <h2 className="text-xl font-bold">{item.symbol}</h2>
                       <p className="text-xs text-gray-500">
-                        Binance · 1H · Live
+                        Twelve Data · 1H · Live
                       </p>
                     </div>
 

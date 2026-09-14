@@ -1,20 +1,45 @@
 import { NextResponse } from "next/server";
-import ccxt from "ccxt";
-import { SMA } from "technicalindicators";
+
+const symbols = ["BTC/USD", "ETH/USD", "SOL/USD"];
 
 export async function GET() {
   try {
-    const exchange = new ccxt.binance();
-    const symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"];
+    const apiKey = process.env.TWELVE_DATA_API_KEY;
 
-    const strategies = await Promise.all(
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "TWELVE_DATA_API_KEY is not configured." },
+        { status: 500 }
+      );
+    }
+
+    const results = await Promise.all(
       symbols.map(async (symbol) => {
-        const candles = await exchange.fetchOHLCV(symbol, "1h", undefined, 200);
-        const closes = candles.map((c) => Number(c[4]));
+        const response = await fetch(
+          `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1h&outputsize=100&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`,
+          { cache: "no-store" }
+        );
 
-        const sma20 = SMA.calculate({ period: 20, values: closes }).at(-1)!;
-        const sma50 = SMA.calculate({ period: 50, values: closes }).at(-1)!;
-        const price = closes.at(-1)!;
+        const result = await response.json();
+
+        if (
+          !response.ok ||
+          result.status === "error" ||
+          !Array.isArray(result.values)
+        ) {
+          throw new Error(result.message || `Failed to fetch ${symbol}`);
+        }
+
+        const closes = result.values
+          .slice()
+          .reverse()
+          .map((c: any) => Number(c.close));
+
+        const price = closes[closes.length - 1];
+        const sma20 =
+          closes.slice(-20).reduce((a: number, b: number) => a + b, 0) / 20;
+        const sma50 =
+          closes.slice(-50).reduce((a: number, b: number) => a + b, 0) / 50;
 
         const trend =
           price > sma20 && sma20 > sma50
@@ -23,12 +48,23 @@ export async function GET() {
               ? "BEARISH"
               : "NEUTRAL";
 
-        return { symbol, price, sma20, sma50, trend, source: "Binance" };
+        return {
+          symbol,
+          price,
+          sma20,
+          sma50,
+          trend,
+          source: "Twelve Data",
+        };
       })
     );
 
-    return NextResponse.json({ strategies });
-  } catch {
-    return NextResponse.json({ error: "Market data unavailable" }, { status: 500 });
+    return NextResponse.json(results);
+  } catch (error: any) {
+    console.error(error);
+    return NextResponse.json(
+      { error: error?.message || "Strategy market data request failed." },
+      { status: 502 }
+    );
   }
 }

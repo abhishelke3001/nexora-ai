@@ -88,7 +88,7 @@ export default function Home() {
               </p>
 
               <p className="mt-2 text-xs text-gray-500">
-                Binance · Live
+                Twelve Data · Live
               </p>
             </div>
           ))}
@@ -98,10 +98,10 @@ export default function Home() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold">
-                BTC/USDT
+                BTC/USD
               </h2>
               <p className="text-xs text-gray-500">
-                Real Binance 1H candles
+                Real Twelve Data 1H candles
               </p>
             </div>
 

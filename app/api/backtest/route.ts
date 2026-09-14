@@ -1,11 +1,27 @@
 import { NextResponse } from "next/server";
-import ccxt from "ccxt";
 
 export async function POST() {
   try {
-    const exchange = new ccxt.binance();
-    const candles = await exchange.fetchOHLCV("BTC/USDT", "1h", undefined, 500);
-    const closes = candles.map((c) => Number(c[4]));
+    
+    const apiKey = process.env.TWELVE_DATA_API_KEY;
+    if (!apiKey) throw new Error("TWELVE_DATA_API_KEY is not configured.");
+    const response = await fetch(
+      `https://api.twelvedata.com/time_series?symbol=BTC%2FUSD&interval=1h&outputsize=500&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`,
+      { cache: "no-store" }
+    );
+    const result = await response.json();
+    if (!response.ok || result.status === "error" || !Array.isArray(result.values)) {
+      throw new Error(result.message || "Crypto backtest data request failed.");
+    }
+    const candles = result.values.slice().reverse().map((c: any) => [
+      new Date(c.datetime).getTime(),
+      Number(c.open),
+      Number(c.high),
+      Number(c.low),
+      Number(c.close),
+      Number(c.volume || 0),
+    ]);
+    const closes = candles.map((c: number[]) => Number(c[4]));
 
     const sma = (values: number[], period: number, index: number) => {
       let total = 0;
@@ -53,7 +69,7 @@ export async function POST() {
       : 0;
 
     return NextResponse.json({
-      symbol: "BTC/USDT",
+      symbol: "BTC/USD",
       timeframe: "1h",
       candles: candles.length,
       initialBalance: 10000,

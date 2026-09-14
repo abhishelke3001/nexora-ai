@@ -1,129 +1,77 @@
 import { NextResponse } from "next/server";
-import ccxt from "ccxt";
 
-const cryptoSymbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"];
+const cryptoSymbols = ["BTC/USD", "ETH/USD", "SOL/USD", "BNB/USD", "XRP/USD"];
 
-const forexSymbols = [
-  "EUR/USD",
-  "GBP/USD",
-  "USD/JPY",
-  "USD/CHF",
-  "AUD/USD",
-  "USD/CAD",
-  "NZD/USD",
-];
-
-const allowedTimeframes = ["15m", "1h", "4h", "1d"];
+const timeframeMap: Record<string, string> = {
+  "15m": "15min",
+  "1h": "1h",
+  "4h": "4h",
+  "1d": "1day",
+};
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-
-    const symbol = searchParams.get("symbol") || "BTC/USDT";
+    const symbol = searchParams.get("symbol") || "BTC/USD";
     const timeframe = searchParams.get("timeframe") || "1h";
 
-    if (!allowedTimeframes.includes(timeframe)) {
+    const apiKey = process.env.TWELVE_DATA_API_KEY;
+
+    if (!apiKey) {
       return NextResponse.json(
-        { error: "Unsupported timeframe" },
-        { status: 400 }
+        { error: "TWELVE_DATA_API_KEY is not configured" },
+        { status: 500 }
       );
     }
 
-    if (cryptoSymbols.includes(symbol)) {
-      const exchange = new ccxt.binance();
+    const interval = timeframeMap[timeframe] || "1h";
+    const isCrypto = cryptoSymbols.includes(symbol);
 
-      const candles = await exchange.fetchOHLCV(
-        symbol,
-        timeframe,
-        undefined,
-        200
+    const url = new URL("https://api.twelvedata.com/time_series");
+    url.searchParams.set("symbol", symbol);
+    url.searchParams.set("interval", interval);
+    url.searchParams.set("outputsize", "200");
+    url.searchParams.set("timezone", "UTC");
+    url.searchParams.set("apikey", apiKey);
+
+    const response = await fetch(url.toString(), {
+      cache: "no-store",
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.status === "error" || !data.values) {
+      return NextResponse.json(
+        { error: data.message || "Failed to fetch market candles" },
+        { status: 502 }
       );
+    }
 
-      const data = candles.map((c) => ({
-        time: Number(c[0]),
-        open: Number(c[1]),
-        high: Number(c[2]),
-        low: Number(c[3]),
-        close: Number(c[4]),
+    const candles = data.values
+      .reverse()
+      .map((c: {
+        datetime: string;
+        open: string;
+        high: string;
+        low: string;
+        close: string;
+        volume?: string;
+      }) => ({
+        time: Math.floor(new Date(c.datetime).getTime() / 1000),
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close),
+        volume: c.volume ? Number(c.volume) : undefined,
       }));
 
-      return NextResponse.json({
-        symbol,
-        timeframe,
-        source: "Binance",
-        data,
-      });
-    }
-
-    if (forexSymbols.includes(symbol)) {
-      const apiKey = process.env.TWELVE_DATA_API_KEY;
-
-      if (!apiKey) {
-        return NextResponse.json(
-          { error: "Twelve Data API key is not configured" },
-          { status: 500 }
-        );
-      }
-
-      const intervalMap: Record<string, string> = {
-        "15m": "15min",
-        "1h": "1h",
-        "4h": "4h",
-        "1d": "1day",
-      };
-
-      const url =
-        `https://api.twelvedata.com/time_series` +
-        `?symbol=${encodeURIComponent(symbol)}` +
-        `&interval=${intervalMap[timeframe]}` +
-        `&outputsize=200` +
-        `&apikey=${encodeURIComponent(apiKey)}`;
-
-      const response = await fetch(url, {
-        cache: "no-store",
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || result.status === "error" || !result.values) {
-        console.error("Twelve Data error:", result);
-
-        return NextResponse.json(
-          { error: result.message || "Failed to fetch Forex candles" },
-          { status: 500 }
-        );
-      }
-
-      const data = result.values
-        .reverse()
-        .map(
-          (c: {
-            datetime: string;
-            open: string;
-            high: string;
-            low: string;
-            close: string;
-          }) => ({
-            time: Math.floor(new Date(c.datetime).getTime() / 1000),
-            open: Number(c.open),
-            high: Number(c.high),
-            low: Number(c.low),
-            close: Number(c.close),
-          })
-        );
-
-      return NextResponse.json({
-        symbol,
-        timeframe,
-        source: "Twelve Data",
-        data,
-      });
-    }
-
-    return NextResponse.json(
-      { error: "Unsupported symbol" },
-      { status: 400 }
-    );
+    return NextResponse.json({
+      symbol,
+      timeframe,
+      source: "Twelve Data",
+      marketType: isCrypto ? "crypto" : "forex",
+      candles,
+    });
   } catch (error) {
     console.error("Candles API error:", error);
 

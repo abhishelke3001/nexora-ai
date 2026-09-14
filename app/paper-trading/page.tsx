@@ -169,7 +169,7 @@ export default function PaperTradingPage() {
             <div>
               <h1 className="text-3xl font-bold">Paper Trading</h1>
               <p className="mt-1 text-sm text-gray-500">
-                Simulated execution using live Binance prices
+                Simulated execution using live Twelve Data prices
               </p>
             </div>
 
@@ -222,7 +222,7 @@ export default function PaperTradingPage() {
                   <span className="text-xs text-green-400">LIVE</span>
                 </div>
 
-                <p className="mt-1 text-xs text-gray-500">Binance</p>
+                <p className="mt-1 text-xs text-gray-500">Twelve Data</p>
 
                 <p className="mt-6 text-3xl font-bold">
                   ${Number(p.price).toLocaleString()}

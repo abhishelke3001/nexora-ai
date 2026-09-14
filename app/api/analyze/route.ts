@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import ccxt from "ccxt";
 import {
   RSI,
   EMA,
@@ -14,11 +13,11 @@ const openai = new OpenAI({
 });
 
 const cryptoSymbols = [
-  "BTC/USDT",
-  "ETH/USDT",
-  "SOL/USDT",
-  "BNB/USDT",
-  "XRP/USDT",
+  "BTC/USD",
+  "ETH/USD",
+  "SOL/USD",
+  "BNB/USD",
+  "XRP/USD",
 ];
 
 const forexSymbols = [
@@ -32,7 +31,7 @@ const forexSymbols = [
 ];
 
 function getCryptoSymbol(symbol: string) {
-  return cryptoSymbols.includes(symbol) ? symbol : "BTC/USDT";
+  return cryptoSymbols.includes(symbol) ? symbol : "BTC/USD";
 }
 
 function getForexSymbol(symbol: string) {
@@ -87,7 +86,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
 
-    const symbol = searchParams.get("symbol") || "BTC/USDT";
+    const symbol = searchParams.get("symbol") || "BTC/USD";
     const mode = searchParams.get("mode") || "Technical";
 
     const isForex = forexSymbols.includes(symbol);
@@ -95,23 +94,51 @@ export async function GET(request: Request) {
     let ohlcv: number[][];
 
     if (!isForex) {
-      const exchange = new ccxt.binance();
+      const apiKey = process.env.TWELVE_DATA_API_KEY;
+
+      if (!apiKey) {
+        return NextResponse.json(
+          { error: "TWELVE_DATA_API_KEY is not configured" },
+          { status: 500 }
+        );
+      }
+
       const cryptoSymbol = getCryptoSymbol(symbol);
 
-      const candles = await exchange.fetchOHLCV(
-        cryptoSymbol,
-        "1h",
-        undefined,
-        250
-      );
+      const url = new URL("https://api.twelvedata.com/time_series");
+      url.searchParams.set("symbol", cryptoSymbol);
+      url.searchParams.set("interval", "1h");
+      url.searchParams.set("outputsize", "250");
+      url.searchParams.set("timezone", "UTC");
+      url.searchParams.set("apikey", apiKey);
 
-      ohlcv = candles.map((c) => [
-        Number(c[0]),
-        Number(c[1]),
-        Number(c[2]),
-        Number(c[3]),
-        Number(c[4]),
-        Number(c[5] ?? 0),
+      const response = await fetch(url.toString(), {
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.status === "error" || !data.values) {
+        return NextResponse.json(
+          { error: data.message || "Failed to fetch crypto market data" },
+          { status: 502 }
+        );
+      }
+
+      ohlcv = data.values.reverse().map((c: {
+        datetime: string;
+        open: string;
+        high: string;
+        low: string;
+        close: string;
+        volume?: string;
+      }) => [
+        new Date(c.datetime).getTime(),
+        Number(c.open),
+        Number(c.high),
+        Number(c.low),
+        Number(c.close),
+        Number(c.volume || 0),
       ]);
     } else {
       const apiKey = process.env.TWELVE_DATA_API_KEY;
