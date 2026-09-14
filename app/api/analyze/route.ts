@@ -305,25 +305,67 @@ If evidence conflicts, return WAIT.
 No guaranteed-profit language.
 `;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5.6-luna",
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a financial market analysis engine. Produce structured, probabilistic analysis only.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    });
+    let ai: any;
 
-    const ai = JSON.parse(
-      completion.choices[0]?.message?.content || "{}"
-    );
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5.6-luna",
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a financial market analysis engine. Produce structured, probabilistic analysis only.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      });
+
+      ai = JSON.parse(
+        completion.choices[0]?.message?.content || "{}"
+      );
+    } catch (aiError) {
+      console.warn("AI quota/error, using deterministic fallback:", aiError);
+
+      const bullish =
+        price > ema20 &&
+        ema20 > ema50 &&
+        rsi >= 50 &&
+        rsi < 75 &&
+        (macd?.histogram ?? 0) > 0;
+
+      const bearish =
+        price < ema20 &&
+        ema20 < ema50 &&
+        rsi <= 50 &&
+        rsi > 25 &&
+        (macd?.histogram ?? 0) < 0;
+
+      const verdict = bullish ? "LONG" : bearish ? "SHORT" : "WAIT";
+
+      ai = {
+        verdict,
+        confidence: verdict === "WAIT" ? 55 : 68,
+        risk: verdict === "WAIT" ? "HIGH" : "MEDIUM",
+        reasoning:
+          verdict === "LONG"
+            ? "Price is above EMA20/EMA50 with bullish momentum confirmation."
+            : verdict === "SHORT"
+            ? "Price is below EMA20/EMA50 with bearish momentum confirmation."
+            : "Technical evidence is mixed, so NEXORA AI recommends waiting.",
+        signals: [
+          `RSI: ${rsi}`,
+          `EMA20: ${ema20.toFixed(2)}`,
+          `EMA50: ${ema50.toFixed(2)}`,
+          `MACD histogram: ${(macd?.histogram ?? 0).toFixed(2)}`,
+          `Structure: ${structure.marketStructure}`,
+        ],
+        source: "NEXORA deterministic fallback",
+      };
+    }
 
     // NEXORA deterministic risk engine.
     // Trade levels are calculated from real market price + ATR,
