@@ -13,29 +13,26 @@ export async function GET() {
       );
     }
 
-    const data = await Promise.all(
-      symbols.map(async (symbol) => {
-        const url =
-          `https://api.twelvedata.com/quote` +
-          `?symbol=${encodeURIComponent(symbol)}` +
-          `&apikey=${encodeURIComponent(apiKey)}`;
+    const url =
+      `https://api.twelvedata.com/quote` +
+      `?symbol=${encodeURIComponent(symbols.join(","))}` +
+      `&apikey=${encodeURIComponent(apiKey)}`;
 
-        const response = await fetch(url, { cache: "no-store" });
-        const quote = await response.json();
+    const response = await fetch(url, { next: { revalidate: 30 } });
+    const quote = await response.json();
 
-        if (!response.ok || quote.status === "error") {
-          throw new Error(
-            quote.message || `Failed to fetch ${symbol}`
-          );
-        }
+    if (!response.ok || quote.status === "error") {
+      throw new Error(quote.message || "Failed to fetch market data");
+    }
 
-        return {
-          symbol,
-          price: Number(quote.close),
-          change24h: Number(quote.percent_change),
-        };
-      })
-    );
+    const data = symbols.map((symbol) => {
+      const q = quote[symbol] || {};
+      return {
+        symbol,
+        price: Number(q.close),
+        change24h: Number(q.percent_change),
+      };
+    });
 
     return NextResponse.json(data);
   } catch (error: any) {
