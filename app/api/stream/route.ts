@@ -32,7 +32,7 @@ export async function GET() {
           JSON.stringify({
             action: "subscribe",
             params: {
-              symbols: "BTC/USD,ETH/USD,SOL/USD",
+              symbols: "BTC/USD,ETH/USD,SOL/USD,BNB/USD,XRP/USD,BNB/USD,XRP/USD",
             },
           })
         );
