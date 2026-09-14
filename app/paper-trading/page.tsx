@@ -27,11 +27,26 @@ export default function PaperTradingPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
 
   async function loadPrices() {
-    const r = await fetch("/api/market?t=" + Date.now(), {
-      cache: "no-store",
-    });
-    const data = await r.json();
-    setPrices(data);
+    try {
+      const r = await fetch("/api/market?t=" + Date.now(), {
+        cache: "no-store",
+      });
+
+      if (!r.ok) {
+        throw new Error(`Market API error: ${r.status}`);
+      }
+
+      const data = await r.json();
+
+      if (!Array.isArray(data)) {
+        throw new Error("Invalid market data");
+      }
+
+      setPrices(data);
+    } catch (error) {
+      console.error("Paper trading market load failed:", error);
+      setPrices([]);
+    }
   }
 
   useEffect(() => {
