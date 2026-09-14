@@ -113,7 +113,7 @@ export async function POST(request: Request) {
       url.searchParams.set("apikey", apiKey);
 
       const response = await fetch(url.toString(), {
-        cache: "no-store",
+        next: { revalidate: 30 },
       });
 
       const data = await response.json();
@@ -159,7 +159,7 @@ export async function POST(request: Request) {
         `&apikey=${encodeURIComponent(apiKey)}`;
 
       const response = await fetch(url, {
-        cache: "no-store",
+        next: { revalidate: 30 },
       });
 
       const fx = await response.json();
