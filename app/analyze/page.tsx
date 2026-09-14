@@ -60,7 +60,7 @@ export default function AnalyzePage() {
 
     const interval = setInterval(() => {
       runAnalysis();
-    }, 30000);
+    }, 300000);
 
     return () => clearInterval(interval);
   }, [symbol, mode]);
