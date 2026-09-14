@@ -15,6 +15,13 @@ import {
 type Props = {
   symbol?: string;
   timeframe?: string;
+  signal?: {
+    verdict?: string;
+    entry?: number;
+    stopLoss?: number;
+    target1?: number;
+    target2?: number;
+  };
 };
 
 const timeframeMap: Record<string, string> = {
@@ -146,12 +153,21 @@ export default function BtcChart({
         // NEXORA live signal levels
         // These are derived from the latest market price and ATR.
         const latest = candles[candles.length - 1];
-        const entry = latest.close;
+        const entry = signal?.entry ?? latest.close;
         const range = Math.max(latest.high - latest.low, entry * 0.004);
+        const isShort = signal?.verdict === "SHORT";
 
-        const stopLoss = entry - range * 1.5;
-        const target1 = entry + range;
-        const target2 = entry + range * 2;
+        const stopLoss =
+          signal?.stopLoss ??
+          (isShort ? entry + range * 1.5 : entry - range * 1.5);
+
+        const target1 =
+          signal?.target1 ??
+          (isShort ? entry - range : entry + range);
+
+        const target2 =
+          signal?.target2 ??
+          (isShort ? entry - range * 2 : entry + range * 2);
 
         for (const line of priceLinesRef.current) {
           try {
