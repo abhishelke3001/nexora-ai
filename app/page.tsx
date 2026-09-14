@@ -30,8 +30,27 @@ export default function Home() {
   useEffect(() => {
     loadMarkets();
 
-    const interval = setInterval(loadMarkets, 10000);
-    return () => clearInterval(interval);
+    const source = new EventSource("/api/stream");
+
+    source.onmessage = (event) => {
+      try {
+        const tick = JSON.parse(event.data);
+
+        if (tick.symbol && typeof tick.price === "number") {
+          setMarkets((current) =>
+            current.map((market) =>
+              market.symbol === tick.symbol
+                ? { ...market, price: tick.price }
+                : market
+            )
+          );
+        }
+      } catch {}
+    };
+
+    return () => {
+      source.close();
+    };
   }, []);
 
   return (

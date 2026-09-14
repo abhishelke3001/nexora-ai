@@ -11,6 +11,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
+    "@types/ws": "^8.18.1",
     "ccxt": "^4.5.78",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^1.46.0",
@@ -20,7 +21,8 @@
     "protobufjs": "^7.6.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "technicalindicators": "^3.1.0"
+    "technicalindicators": "^3.1.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
