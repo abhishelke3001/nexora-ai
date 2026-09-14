@@ -152,23 +152,19 @@ export default function BtcChart({
         chart.timeScale().fitContent();
 
         // NEXORA live signal levels
-        // These are derived from the latest market price and ATR.
+        // Only draw trade levels when NEXORA has an actual LONG/SHORT setup.
         const latest = candles[candles.length - 1];
-        const entry = signal?.entry ?? latest.close;
-        const range = Math.max(latest.high - latest.low, entry * 0.004);
-        const isShort = signal?.verdict === "SHORT";
+        const hasTradeSetup =
+          (signal?.verdict === "LONG" || signal?.verdict === "SHORT") &&
+          typeof signal?.entry === "number" &&
+          typeof signal?.stopLoss === "number" &&
+          typeof signal?.target1 === "number" &&
+          typeof signal?.target2 === "number";
 
-        const stopLoss =
-          signal?.stopLoss ??
-          (isShort ? entry + range * 1.5 : entry - range * 1.5);
-
-        const target1 =
-          signal?.target1 ??
-          (isShort ? entry - range : entry + range);
-
-        const target2 =
-          signal?.target2 ??
-          (isShort ? entry - range * 2 : entry + range * 2);
+        const entry = hasTradeSetup ? signal!.entry! : undefined;
+        const stopLoss = hasTradeSetup ? signal!.stopLoss! : undefined;
+        const target1 = hasTradeSetup ? signal!.target1! : undefined;
+        const target2 = hasTradeSetup ? signal!.target2! : undefined;
 
         for (const line of priceLinesRef.current) {
           try {
@@ -176,40 +172,42 @@ export default function BtcChart({
           } catch {}
         }
 
-        priceLinesRef.current = [
-          candleSeries.createPriceLine({
-            price: entry,
-            color: "#60a5fa",
-            lineWidth: 2,
-            lineStyle: 0,
-            axisLabelVisible: true,
-            title: "ENTRY",
-          }),
-          candleSeries.createPriceLine({
-            price: stopLoss,
-            color: "#ef4444",
-            lineWidth: 2,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: "SL",
-          }),
-          candleSeries.createPriceLine({
-            price: target1,
-            color: "#22c55e",
-            lineWidth: 2,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: "TP1",
-          }),
-          candleSeries.createPriceLine({
-            price: target2,
-            color: "#16a34a",
-            lineWidth: 2,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: "TP2",
-          }),
-        ];
+        priceLinesRef.current = hasTradeSetup
+          ? [
+              candleSeries.createPriceLine({
+                price: entry!,
+                color: "#60a5fa",
+                lineWidth: 2,
+                lineStyle: 0,
+                axisLabelVisible: true,
+                title: "ENTRY",
+              }),
+              candleSeries.createPriceLine({
+                price: stopLoss!,
+                color: "#ef4444",
+                lineWidth: 2,
+                lineStyle: 2,
+                axisLabelVisible: true,
+                title: "SL",
+              }),
+              candleSeries.createPriceLine({
+                price: target1!,
+                color: "#22c55e",
+                lineWidth: 2,
+                lineStyle: 2,
+                axisLabelVisible: true,
+                title: "TP1",
+              }),
+              candleSeries.createPriceLine({
+                price: target2!,
+                color: "#16a34a",
+                lineWidth: 2,
+                lineStyle: 2,
+                axisLabelVisible: true,
+                title: "TP2",
+              }),
+            ]
+          : [];
       } catch (error) {
         console.error("Failed to load candles:", error);
       }
