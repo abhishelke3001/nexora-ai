@@ -1,0 +1,16 @@
+name: NEXORA AI Automation
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  automation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger NEXORA automation
+        run: |
+          curl -fsS \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://nexora-ai-two-delta.vercel.app/api/automation
