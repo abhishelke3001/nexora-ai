@@ -1,10 +1,34 @@
 import { NextResponse } from "next/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 export async function GET() {
   try {
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       "https://nexora-ai-two-delta.vercel.app";
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey =
+      process.env.SUPABASE_SECRET_KEY ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json(
+        { success: false, error: "Supabase server credentials are missing" },
+        { status: 500 }
+      );
+    }
+
+    const supabase = createSupabaseClient(
+      supabaseUrl,
+      supabaseKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
 
     const verdictUrl = new URL("/api/verdict", baseUrl);
     verdictUrl.searchParams.set("symbol", "BTC/USD");
@@ -26,34 +50,89 @@ export async function GET() {
       );
     }
 
-    const shouldAlert =
-      (verdict.verdict === "LONG" ||
-        verdict.verdict === "SHORT") &&
-      Number(verdict.confidence || 0) >= 65;
+    const signal = {
+      symbol: verdict.symbol,
+      verdict: verdict.verdict,
+      confidence: Number(verdict.confidence || 0),
+      entry: verdict.levels?.entry ?? null,
+      stop_loss: verdict.levels?.stopLoss ?? null,
+      target1: verdict.levels?.target1 ?? null,
+      target2: verdict.levels?.target2 ?? null,
+      technical_verdict: verdict.lanes?.technical?.verdict ?? null,
+      technical_confidence:
+        verdict.lanes?.technical?.confidence ?? null,
+      flow_verdict: verdict.lanes?.flow?.verdict ?? null,
+      flow_confidence:
+        verdict.lanes?.flow?.confidence ?? null,
+      news_sentiment:
+        verdict.lanes?.news?.sentiment ?? "NEUTRAL",
+      news_score:
+        verdict.lanes?.news?.score ?? 0,
+      macro_bias:
+        verdict.lanes?.macro?.bias ?? "NEUTRAL",
+      macro_score:
+        verdict.lanes?.macro?.score ?? 0,
+      reasoning: verdict.reasoning ?? "",
+      telegram_sent: false,
+    };
+
+    const { data: previousSignals, error: previousError } =
+      await supabase
+        .from("signal_history")
+        .select(
+          "verdict,confidence,entry,stop_loss,target1,target2,telegram_sent,created_at"
+        )
+        .eq("symbol", signal.symbol)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+    if (previousError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: previousError.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    const previous = previousSignals?.[0] ?? null;
+
+    const actionable =
+      (signal.verdict === "LONG" || signal.verdict === "SHORT") &&
+      signal.confidence >= 65;
+
+    const sameAsPrevious =
+      Boolean(previous) &&
+      previous.verdict === signal.verdict &&
+      Number(previous.entry ?? 0) === Number(signal.entry ?? 0) &&
+      Number(previous.stop_loss ?? 0) === Number(signal.stop_loss ?? 0) &&
+      Number(previous.target1 ?? 0) === Number(signal.target1 ?? 0) &&
+      Number(previous.target2 ?? 0) === Number(signal.target2 ?? 0);
 
     let telegramSent = false;
 
-    if (shouldAlert) {
+    if (actionable && !sameAsPrevious) {
       const telegramUrl = new URL("/api/telegram", baseUrl);
 
       const message = [
-        "🚨 NEXORA AI — FOUR-LANE SIGNAL",
+        "🚨 NEXORA AI — NEW SIGNAL",
         "",
-        `Asset: ${verdict.symbol}`,
-        `Verdict: ${verdict.verdict}`,
-        `Confidence: ${verdict.confidence}%`,
+        `Asset: ${signal.symbol}`,
+        `Verdict: ${signal.verdict}`,
+        `Confidence: ${signal.confidence}%`,
         "",
-        `Technical: ${verdict.lanes.technical.verdict} (${verdict.lanes.technical.confidence}%)`,
-        `Flow: ${verdict.lanes.flow.verdict} (${verdict.lanes.flow.confidence}%)`,
-        `News: ${verdict.lanes.news.sentiment}`,
-        `Macro: ${verdict.lanes.macro.bias}`,
+        `Technical: ${signal.technical_verdict} (${signal.technical_confidence}%)`,
+        `Flow: ${signal.flow_verdict} (${signal.flow_confidence}%)`,
+        `News: ${signal.news_sentiment}`,
+        `Macro: ${signal.macro_bias}`,
         "",
-        `Entry: ${verdict.levels.entry ?? "—"}`,
-        `Stop Loss: ${verdict.levels.stopLoss ?? "—"}`,
-        `Target 1: ${verdict.levels.target1 ?? "—"}`,
-        `Target 2: ${verdict.levels.target2 ?? "—"}`,
+        `Entry: ${signal.entry ?? "—"}`,
+        `Stop Loss: ${signal.stop_loss ?? "—"}`,
+        `Target 1: ${signal.target1 ?? "—"}`,
+        `Target 2: ${signal.target2 ?? "—"}`,
         "",
-        `Reason: ${verdict.reasoning || "—"}`,
+        `Reason: ${signal.reasoning || "—"}`,
         "",
         "Source: NEXORA AI",
       ].join("\n");
@@ -70,15 +149,36 @@ export async function GET() {
       );
 
       telegramSent = telegramResponse.ok;
+      signal.telegram_sent = telegramSent;
+    }
+
+    const { data: insertedSignal, error: insertError } =
+      await supabase
+        .from("signal_history")
+        .insert(signal)
+        .select()
+        .single();
+
+    if (insertError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: insertError.message,
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
       success: true,
       mode: "LIVE_FOUR_LANE_AUTOMATION",
-      symbol: verdict.symbol,
-      verdict: verdict.verdict,
-      confidence: verdict.confidence,
+      symbol: signal.symbol,
+      verdict: signal.verdict,
+      confidence: signal.confidence,
+      actionable,
+      duplicate: sameAsPrevious,
       telegramSent,
+      signalId: insertedSignal.id,
       lanes: verdict.lanes,
       levels: verdict.levels,
       timestamp: new Date().toISOString(),
