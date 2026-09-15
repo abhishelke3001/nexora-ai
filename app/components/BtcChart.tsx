@@ -293,12 +293,75 @@ export default function BtcChart({
     };
   }, [symbol, timeframe]);
 
+
+  useEffect(() => {
+    const series = seriesRef.current;
+
+    if (!series) return;
+
+    // Remove previous signal price lines.
+    for (const line of priceLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {}
+    }
+
+    priceLinesRef.current = [];
+
+    if (!signal || signal.verdict === "WAIT") {
+      return;
+    }
+
+    const levels = [
+      {
+        price: signal.entry,
+        title: `${signal.verdict} ENTRY`,
+        color: signal.verdict === "LONG" ? "#22c55e" : "#ef4444",
+      },
+      {
+        price: signal.stopLoss,
+        title: "STOP LOSS",
+        color: "#ef4444",
+      },
+      {
+        price: signal.target1,
+        title: "TP1",
+        color: "#22c55e",
+      },
+      {
+        price: signal.target2,
+        title: "TP2",
+        color: "#38bdf8",
+      },
+    ];
+
+    for (const level of levels) {
+      if (
+        level.price == null ||
+        !Number.isFinite(Number(level.price))
+      ) {
+        continue;
+      }
+
+      const line = series.createPriceLine({
+        price: Number(level.price),
+        color: level.color,
+        lineWidth: 2,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: level.title,
+      });
+
+      priceLinesRef.current.push(line);
+    }
+  }, [signal]);
+
   return (
     <div className="relative">
       <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-lg border border-red-500/30 bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
         <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
         LIVE
-        <span className="text-white/60">BTC/USD</span>
+        <span className="text-white/60">{symbol}</span>
       </div>
 
       <div
