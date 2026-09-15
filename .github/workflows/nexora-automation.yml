@@ -12,7 +12,8 @@ jobs:
       - name: Trigger NEXORA automation
         run: |
           test -n "${{ secrets.CRON_SECRET }}"
-          echo "CRON_SECRET is available to GitHub Actions"
+          FINGERPRINT=$(printf '%s' "${{ secrets.CRON_SECRET }}" | sha256sum | cut -c1-12)
+          echo "GitHub CRON_SECRET fingerprint: $FINGERPRINT"
           curl -fsS \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://nexora-ai-two-delta.vercel.app/api/automation
