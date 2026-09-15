@@ -21,6 +21,39 @@ const timeframes = ["15M", "1H", "4H", "1D"];
 export default function ChartsPage() {
   const [symbol, setSymbol] = useState("BTC/USD");
   const [timeframe, setTimeframe] = useState("1H");
+  const [signal, setSignal] = useState<any>(null);
+
+  async function loadSignal() {
+    try {
+      const response = await fetch(
+        `/api/verdict?symbol=${encodeURIComponent(symbol)}&t=${Date.now()}`,
+        { cache: "no-store" }
+      );
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+
+      if (data?.success) {
+        setSignal({
+          verdict: data.verdict,
+          entry: data.levels?.entry,
+          stopLoss: data.levels?.stopLoss,
+          target1: data.levels?.target1,
+          target2: data.levels?.target2,
+        });
+      }
+    } catch {}
+  }
+
+  useEffect(() => {
+    loadSignal();
+
+    const timer = window.setInterval(loadSignal, 60_000);
+
+    return () => window.clearInterval(timer);
+  }, [symbol]);
+
 
   return (
     <>
@@ -77,7 +110,7 @@ export default function ChartsPage() {
               </div>
             </div>
 
-            <BtcChart symbol={symbol} timeframe={timeframe} />
+            <BtcChart symbol={symbol} timeframe={timeframe} signal={signal} />
           </div>
         </div>
       </main>
