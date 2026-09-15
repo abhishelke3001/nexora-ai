@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 const cryptoSymbols = ["BTC/USD", "ETH/USD", "SOL/USD", "BNB/USD", "XRP/USD"];
+const forexSymbols = ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD"];
+const commoditySymbols = ["XAU/USD", "XAG/USD", "WTI/USD"];
 
 const timeframeMap: Record<string, string> = {
   "15m": "15min",
@@ -26,6 +28,8 @@ export async function GET(request: Request) {
 
     const interval = timeframeMap[timeframe] || "1h";
     const isCrypto = cryptoSymbols.includes(symbol);
+const isForex = forexSymbols.includes(symbol);
+const isCommodity = commoditySymbols.includes(symbol);
 
     const url = new URL("https://api.twelvedata.com/time_series");
     url.searchParams.set("symbol", symbol);
@@ -69,7 +73,7 @@ export async function GET(request: Request) {
       symbol,
       timeframe,
       source: "Twelve Data",
-      marketType: isCrypto ? "crypto" : "forex",
+      marketType: isCrypto ? "crypto" : isCommodity ? "commodity" : isForex ? "forex" : "unknown",
       candles,
     });
   } catch (error) {

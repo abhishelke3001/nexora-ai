@@ -30,12 +30,26 @@ const forexSymbols = [
   "NZD/USD",
 ];
 
+const commoditySymbols = [
+  "XAU/USD",
+  "XAG/USD",
+  "WTI/USD",
+];
+
 function getCryptoSymbol(symbol: string) {
-  return cryptoSymbols.includes(symbol) ? symbol : "BTC/USD";
+  if (!cryptoSymbols.includes(symbol)) {
+    throw new Error(`Unsupported crypto symbol: ${symbol}`);
+  }
+
+  return symbol;
 }
 
 function getForexSymbol(symbol: string) {
-  return forexSymbols.includes(symbol) ? symbol : "EUR/USD";
+  if (!forexSymbols.includes(symbol)) {
+    throw new Error(`Unsupported forex symbol: ${symbol}`);
+  }
+
+  return symbol;
 }
 
 function structureAnalysis(ohlcv: number[][]) {
@@ -90,10 +104,11 @@ export async function POST(request: Request) {
     const mode = searchParams.get("mode") || "Technical";
 
     const isForex = forexSymbols.includes(symbol);
+    const isCommodity = commoditySymbols.includes(symbol);
 
     let ohlcv: number[][];
 
-    if (!isForex) {
+    if (!isForex && !isCommodity) {
       const apiKey = process.env.TWELVE_DATA_API_KEY;
 
       if (!apiKey) {
@@ -140,6 +155,56 @@ export async function POST(request: Request) {
         Number(c.close),
         Number(c.volume || 0),
       ]);
+    } else if (isCommodity) {
+      const apiKey = process.env.TWELVE_DATA_API_KEY;
+
+      if (!apiKey) {
+        return NextResponse.json(
+          { error: "TWELVE_DATA_API_KEY is not configured." },
+          { status: 500 }
+        );
+      }
+
+      const url =
+        `https://api.twelvedata.com/time_series` +
+        `?symbol=${encodeURIComponent(symbol)}` +
+        `&interval=1h` +
+        `&outputsize=250` +
+        `&timezone=UTC` +
+        `&apikey=${encodeURIComponent(apiKey)}`;
+
+      const response = await fetch(url, {
+        next: { revalidate: 30 },
+      });
+
+      const commodity = await response.json();
+
+      if (
+        !response.ok ||
+        commodity.status === "error" ||
+        !Array.isArray(commodity.values)
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              commodity.message ||
+              "Commodity market data request failed.",
+          },
+          { status: 502 }
+        );
+      }
+
+      ohlcv = commodity.values
+        .slice()
+        .reverse()
+        .map((c: any) => [
+          new Date(c.datetime).getTime(),
+          Number(c.open),
+          Number(c.high),
+          Number(c.low),
+          Number(c.close),
+          Number(c.volume || 0),
+        ]);
     } else {
       const apiKey = process.env.TWELVE_DATA_API_KEY;
 
