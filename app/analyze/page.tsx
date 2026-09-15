@@ -31,6 +31,65 @@ export default function AnalyzePage() {
   const [mode, setMode] = useState("Technical");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState("");
+
+  async function paperTradeSignal() {
+    try {
+      setActionMessage("");
+
+      const response = await fetch("/api/paper-trades/signal", {
+        method: "POST",
+      });
+
+      const result = await response.json();
+
+      setActionMessage(
+        result.opened
+          ? `Paper ${result.verdict} opened successfully.`
+          : result.reason || result.error || "No paper trade opened."
+      );
+    } catch {
+      setActionMessage("Paper trade request failed.");
+    }
+  }
+
+  async function sendTelegramSignal() {
+    try {
+      if (!ai) return;
+
+      const message = [
+        "🚨 NEXORA AI SIGNAL",
+        "",
+        `Asset: ${symbol}`,
+        `Verdict: ${ai.verdict || "WAIT"}`,
+        `Confidence: ${ai.confidence ?? "—"}%`,
+        "",
+        `Entry: ${ai.entry ?? "—"}`,
+        `Stop Loss: ${ai.stopLoss ?? "—"}`,
+        `Target 1: ${ai.target1 ?? "—"}`,
+        `Target 2: ${ai.target2 ?? "—"}`,
+        "",
+        `Reason: ${ai.reasoning ?? ai.reason ?? "—"}`,
+        "",
+        "Source: NEXORA AI",
+      ].join("\\n");
+
+      const response = await fetch("/api/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+
+      setActionMessage(
+        response.ok
+          ? "Telegram signal sent."
+          : "Telegram send failed."
+      );
+    } catch {
+      setActionMessage("Telegram send failed.");
+    }
+  }
+
 
   async function runAnalysis() {
     setLoading(true);
@@ -328,6 +387,71 @@ export default function AnalyzePage() {
                 timeframe="1H"
                 signal={data?.ai}
               />
+            </div>
+
+
+            <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-6">
+              <p className="text-xs uppercase tracking-wider text-gray-500">
+                ACTIONS
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={paperTradeSignal}
+                  disabled={
+                    loading ||
+                    !ai ||
+                    (ai.verdict !== "LONG" &&
+                      ai.verdict !== "SHORT")
+                  }
+                  className={`rounded-xl px-5 py-3 text-sm font-bold ${
+                    ai?.verdict === "LONG"
+                      ? "bg-green-500 text-black"
+                      : ai?.verdict === "SHORT"
+                        ? "bg-red-500 text-white"
+                        : "bg-white/10 text-gray-500"
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {ai?.verdict === "LONG" ||
+                  ai?.verdict === "SHORT"
+                    ? `Paper Trade ${ai.verdict}`
+                    : "WAIT — No Paper Trade"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={sendTelegramSignal}
+                  disabled={
+                    !ai ||
+                    (ai.verdict !== "LONG" &&
+                      ai.verdict !== "SHORT")
+                  }
+                  className="rounded-xl border border-white/10 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Send Telegram
+                </button>
+
+                <a
+                  href="/performance"
+                  className="rounded-xl border border-white/10 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-gray-300"
+                >
+                  View Performance
+                </a>
+
+                <a
+                  href="/paper-trading"
+                  className="rounded-xl border border-white/10 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-gray-300"
+                >
+                  Paper Trading
+                </a>
+              </div>
+
+              {actionMessage && (
+                <p className="mt-4 text-sm text-gray-400">
+                  {actionMessage}
+                </p>
+              )}
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-6">
