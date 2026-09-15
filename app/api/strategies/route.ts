@@ -82,11 +82,19 @@ export async function POST(request: Request) {
     if (text.includes("ema50")) {
       indicators.push("EMA50");
 
-      if (text.includes("above ema50")) {
+      if (
+        text.includes("price is above ema50") ||
+        text.includes("price above ema50") ||
+        text.includes("above ema50")
+      ) {
         entryRules.push("Price above EMA50");
       }
 
-      if (text.includes("below ema50")) {
+      if (
+        text.includes("price is below ema50") ||
+        text.includes("price below ema50") ||
+        text.includes("below ema50")
+      ) {
         entryRules.push("Price below EMA50");
       }
     }
