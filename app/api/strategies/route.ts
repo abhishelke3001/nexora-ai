@@ -1,70 +1,142 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
-const symbols = ["BTC/USD", "ETH/USD", "SOL/USD"];
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const schema = {
+  name: "strategy",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      name: { type: "string" },
+      market: { type: "string" },
+      timeframe: { type: "string" },
+      entryRules: {
+        type: "array",
+        items: { type: "string" },
+      },
+      exitRules: {
+        type: "array",
+        items: { type: "string" },
+      },
+      indicators: {
+        type: "array",
+        items: { type: "string" },
+      },
+      riskPercent: { type: "number" },
+      rewardRisk: { type: "number" },
+      allowedSides: {
+        type: "array",
+        items: {
+          type: "string",
+          enum: ["LONG", "SHORT"],
+        },
+      },
+      notes: { type: "string" },
+    },
+    required: [
+      "name",
+      "market",
+      "timeframe",
+      "entryRules",
+      "exitRules",
+      "indicators",
+      "riskPercent",
+      "rewardRisk",
+      "allowedSides",
+      "notes",
+    ],
+  },
+};
 
 export async function GET() {
-  try {
-    const apiKey = process.env.TWELVE_DATA_API_KEY;
+  return NextResponse.json({
+    success: true,
+    mode: "STRATEGY_BUILDER",
+    examples: [
+      "Buy BTC when price is above EMA20 and EMA50, RSI above 55, risk 1%, target 2R.",
+      "Short ETH when EMA20 is below EMA50 and RSI below 45.",
+    ],
+    supportedIndicators: [
+      "RSI",
+      "EMA20",
+      "EMA50",
+      "SMA20",
+      "SMA50",
+      "MACD",
+      "ATR",
+    ],
+  });
+}
 
-    if (!apiKey) {
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const prompt = String(body.prompt || "").trim();
+
+    if (!prompt) {
       return NextResponse.json(
-        { error: "TWELVE_DATA_API_KEY is not configured." },
+        { success: false, error: "Strategy prompt is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { success: false, error: "OPENAI_API_KEY is not configured" },
         { status: 500 }
       );
     }
 
-    const results = await Promise.all(
-      symbols.map(async (symbol) => {
-        const response = await fetch(
-          `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1h&outputsize=100&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`,
-          { cache: "no-store" }
-        );
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      temperature: 0.1,
+      response_format: {
+        type: "json_schema",
+        json_schema: schema,
+      },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are the NEXORA strategy builder. Convert a trader's natural-language strategy into precise, testable rules. Do not invent indicators the user did not request unless required for clarity. Risk percent and reward/risk must be numeric. Keep rules concise and executable by a backtest engine.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
 
-        const result = await response.json();
+    const content = completion.choices[0]?.message?.content;
 
-        if (
-          !response.ok ||
-          result.status === "error" ||
-          !Array.isArray(result.values)
-        ) {
-          throw new Error(result.message || `Failed to fetch ${symbol}`);
-        }
+    if (!content) {
+      throw new Error("Strategy generation returned no content");
+    }
 
-        const closes = result.values
-          .slice()
-          .reverse()
-          .map((c: any) => Number(c.close));
+    const strategy = JSON.parse(content);
 
-        const price = closes[closes.length - 1];
-        const sma20 =
-          closes.slice(-20).reduce((a: number, b: number) => a + b, 0) / 20;
-        const sma50 =
-          closes.slice(-50).reduce((a: number, b: number) => a + b, 0) / 50;
-
-        const trend =
-          price > sma20 && sma20 > sma50
-            ? "BULLISH"
-            : price < sma20 && sma20 < sma50
-              ? "BEARISH"
-              : "NEUTRAL";
-
-        return {
-          symbol,
-          price,
-          sma20,
-          sma50,
-          trend,
-          source: "Twelve Data",
-        };
-      })
-    );
-
-    return NextResponse.json(results);
-  } catch (error: any) {
-    console.error(error);
+    return NextResponse.json({
+      success: true,
+      mode: "AI_STRATEGY_BUILDER",
+      strategy,
+      source: "OpenAI",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
     return NextResponse.json(
-      { error: error?.message || "Strategy market data request failed." },
-      { status: 502 }
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Strategy generation failed",
+      },
+      { status: 500 }
     );
   }
 }
