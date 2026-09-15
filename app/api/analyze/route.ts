@@ -371,8 +371,8 @@ No guaranteed-profit language.
     // Trade levels are calculated from real market price + ATR,
     // never invented by the AI model.
     const riskMultiplier = 1.5;
-    const target1Multiplier = 1.0;
-    const target2Multiplier = 2.0;
+    const target1Multiplier = 2.25;
+    const target2Multiplier = 3.0;
 
     const longStop = price - atr * riskMultiplier;
     const shortStop = price + atr * riskMultiplier;
