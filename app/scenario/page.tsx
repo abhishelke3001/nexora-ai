@@ -15,6 +15,12 @@ type Scenario = {
     target1?: number | null;
     target2?: number | null;
   };
+  lanes?: {
+    technical?: { verdict?: string; confidence?: number };
+    flow?: { verdict?: string; confidence?: number };
+    news?: { sentiment?: string; score?: number };
+    macro?: { bias?: string; score?: number };
+  };
   scenarioLevels: {
     entry?: number | null;
     stopLoss?: number | null;
