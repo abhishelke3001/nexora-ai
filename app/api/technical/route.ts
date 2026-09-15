@@ -7,8 +7,10 @@ import {
   ATR,
 } from "technicalindicators";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const symbol = searchParams.get("symbol") || "BTC/USD";
     const apiKey = process.env.TWELVE_DATA_API_KEY;
 
     if (!apiKey) {
@@ -74,7 +76,7 @@ export async function GET() {
     const price = closes[closes.length - 1];
 
     return NextResponse.json({
-      symbol: "BTC/USD",
+      symbol,
       price,
       rsi: rsi[rsi.length - 1],
       ema20: ema20[ema20.length - 1],

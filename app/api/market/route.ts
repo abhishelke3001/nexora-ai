@@ -1,6 +1,22 @@
 import { NextResponse } from "next/server";
 
-const symbols = ["BTC/USD", "ETH/USD", "SOL/USD"];
+const symbols = [
+  "BTC/USD",
+  "ETH/USD",
+  "SOL/USD",
+  "BNB/USD",
+  "XRP/USD",
+  "XAU/USD",
+  "XAG/USD",
+  "WTI/USD",
+  "EUR/USD",
+  "GBP/USD",
+  "USD/JPY",
+  "USD/CHF",
+  "AUD/USD",
+  "USD/CAD",
+  "NZD/USD",
+];
 
 export async function GET() {
   try {

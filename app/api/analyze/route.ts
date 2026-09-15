@@ -100,8 +100,17 @@ export async function POST(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
 
-    const symbol = searchParams.get("symbol") || "BTC/USD";
-    const mode = searchParams.get("mode") || "Technical";
+    const body = await request.json().catch(() => ({}));
+
+    const symbol =
+      (typeof body.symbol === "string" && body.symbol.trim()
+        ? body.symbol.trim().toUpperCase()
+        : searchParams.get("symbol")) || "BTC/USD";
+
+    const mode =
+      (typeof body.mode === "string" && body.mode.trim()
+        ? body.mode.trim()
+        : searchParams.get("mode")) || "Technical";
 
     const isForex = forexSymbols.includes(symbol);
     const isCommodity = commoditySymbols.includes(symbol);

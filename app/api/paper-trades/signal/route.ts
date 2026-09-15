@@ -19,14 +19,19 @@ function db() {
   });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const body = await request.json().catch(() => ({}));
+    const requestedSymbol =
+      typeof body.symbol === "string" && body.symbol.trim()
+        ? body.symbol.trim().toUpperCase()
+        : "BTC/USD";
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       "https://nexora-ai-two-delta.vercel.app";
 
     const verdictUrl = new URL("/api/verdict", baseUrl);
-    verdictUrl.searchParams.set("symbol", "BTC/USD");
+    verdictUrl.searchParams.set("symbol", requestedSymbol);
 
     const response = await fetch(verdictUrl.toString(), {
       cache: "no-store",

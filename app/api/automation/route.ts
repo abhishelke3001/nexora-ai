@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const requestedSymbol =
+      searchParams.get("symbol") || "BTC/USD";
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       "https://nexora-ai-two-delta.vercel.app";
@@ -31,7 +34,7 @@ export async function GET() {
     );
 
     const verdictUrl = new URL("/api/verdict", baseUrl);
-    verdictUrl.searchParams.set("symbol", "BTC/USD");
+    verdictUrl.searchParams.set("symbol", requestedSymbol);
 
     const verdictResponse = await fetch(verdictUrl.toString(), {
       cache: "no-store",

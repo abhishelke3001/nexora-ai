@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const symbol = searchParams.get("symbol") || "BTC/USD";
+
   try {
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       "https://nexora-ai-two-delta.vercel.app";
 
     const verdictUrl = new URL("/api/verdict", baseUrl);
-    verdictUrl.searchParams.set("symbol", "BTC/USD");
+    verdictUrl.searchParams.set("symbol", symbol);
 
     const sessionsUrl = new URL("/api/sessions", baseUrl);
 
     const newsUrl = new URL("/api/news", baseUrl);
-    newsUrl.searchParams.set("symbol", "BTC/USD");
+    newsUrl.searchParams.set("symbol", symbol);
 
     const [verdictResponse, sessionsResponse, newsResponse] =
       await Promise.all([
@@ -71,7 +74,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       mode: "LIVE_DAILY_BRIEF",
-      symbol: "BTC/USD",
+      symbol,
       generatedAt: new Date().toISOString(),
       headline: summary,
       verdict: verdict.verdict,

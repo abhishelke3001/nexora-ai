@@ -295,6 +295,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const symbol =
+      searchParams.get("symbol") || "BTC/USD";
     const apiKey = process.env.TWELVE_DATA_API_KEY;
 
     if (!apiKey) {
@@ -320,7 +323,7 @@ export async function POST(request: Request) {
       "https://api.twelvedata.com/time_series"
     );
 
-    url.searchParams.set("symbol", "BTC/USD");
+    url.searchParams.set("symbol", symbol);
     url.searchParams.set("interval", strategy.timeframe);
     url.searchParams.set("outputsize", "500");
     url.searchParams.set("timezone", "UTC");
@@ -554,7 +557,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       mode: "REAL_STRATEGY_BACKTEST",
-      symbol: "BTC/USD",
+      symbol,
       strategy: {
         prompt,
         timeframe: strategy.timeframe,
