@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 "use client";
 
 import { FormEvent, useState } from "react";
@@ -7,7 +5,6 @@ import { createClient } from "../lib/supabase/client";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const supabase = createClient();
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -17,6 +14,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
+    const supabase = createClient();
     e.preventDefault();
     setLoading(true);
     setMessage("");
