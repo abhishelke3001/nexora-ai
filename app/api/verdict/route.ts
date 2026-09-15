@@ -206,7 +206,9 @@ export async function GET(request: Request) {
       setupQuality !== "C" &&
       entry != null &&
       stopLoss != null &&
-      target1 != null;
+      target1 != null &&
+      riskReward != null &&
+      riskReward >= 1.5;
 
     const confirmationLabels = [
       technicalScore === (verdict === "LONG" ? 1 : -1)
