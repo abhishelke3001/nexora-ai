@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Trigger NEXORA automation
         run: |
+          test -n "${{ secrets.CRON_SECRET }}"
+          echo "CRON_SECRET is available to GitHub Actions"
           curl -fsS \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://nexora-ai-two-delta.vercel.app/api/automation
