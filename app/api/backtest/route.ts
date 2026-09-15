@@ -127,7 +127,8 @@ function parseStrategy(prompt: string): Strategy {
   if (
     text.includes("price is above ema50") ||
     text.includes("price above ema50") ||
-    text.includes("above ema50")
+    text.includes("above ema50") ||
+    text.includes("ema50")
   ) {
     entryRules.push("PRICE_ABOVE_EMA50");
   }
