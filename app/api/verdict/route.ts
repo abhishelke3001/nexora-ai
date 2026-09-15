@@ -225,6 +225,26 @@ export async function GET(request: Request) {
         : null,
     ].filter(Boolean) as string[];
 
+    const accountSize = 10000;
+    const riskPercent = 1;
+
+    const riskCapital = accountSize * (riskPercent / 100);
+
+    const riskPerUnit =
+      entry != null && stopLoss != null
+        ? Math.abs(entry - stopLoss)
+        : null;
+
+    const positionSize =
+      riskPerUnit != null && riskPerUnit > 0
+        ? Number((riskCapital / riskPerUnit).toFixed(8))
+        : null;
+
+    const positionNotional =
+      positionSize != null && entry != null
+        ? Number((positionSize * entry).toFixed(2))
+        : null;
+
     const invalidation =
       verdict === "LONG"
         ? stopLoss != null
@@ -287,6 +307,15 @@ export async function GET(request: Request) {
         riskReward,
         invalidation,
         reason: setupReason,
+        accountSize,
+        riskPercent,
+        riskCapital: Number(riskCapital.toFixed(2)),
+        riskPerUnit:
+          riskPerUnit != null
+            ? Number(riskPerUnit.toFixed(2))
+            : null,
+        positionSize,
+        positionNotional,
       },
 
       reasoning:
