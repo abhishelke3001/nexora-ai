@@ -17,6 +17,9 @@ const assets = [
   "AUD/USD",
   "USD/CAD",
   "NZD/USD",
+  "XAU/USD",
+  "XAG/USD",
+  "WTI/USD",
 ];
 
 const analysisModes = [
