@@ -8,9 +8,15 @@ import {
   ATR,
 } from "technicalindicators";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAI() {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not configured");
+  }
+
+  return new OpenAI({ apiKey });
+}
 
 const cryptoSymbols = [
   "BTC/USD",
@@ -382,7 +388,7 @@ No guaranteed-profit language.
     let ai: any;
 
     try {
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: "gpt-5.6-luna",
         response_format: { type: "json_object" },
         messages: [
