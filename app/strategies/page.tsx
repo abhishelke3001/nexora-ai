@@ -23,7 +23,7 @@ export default function StrategiesPage() {
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 10000);
+    const timer = setInterval(load, 300000);
     return () => clearInterval(timer);
   }, []);
 
