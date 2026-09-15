@@ -184,43 +184,40 @@ export async function GET(request: Request) {
 
     const risk = scenarioPrice * riskPercent;
 
+    const referenceRisk = scenarioPrice * 0.01;
+
+    const referenceSide =
+      scenarioVerdict === "SHORT"
+        ? "SHORT"
+        : scenarioVerdict === "LONG"
+          ? "LONG"
+          : technicalVerdict === "SHORT"
+            ? "SHORT"
+            : "LONG";
+
+    const confidence = Math.round(
+      55 + Math.min(35, Math.abs(weightedScore) * 30)
+    );
+
     const scenarioLevels = {
       entry: Number(scenarioPrice.toFixed(2)),
       stopLoss:
-        scenarioVerdict === "LONG"
-          ? Number((scenarioPrice - risk).toFixed(2))
-          : scenarioVerdict === "SHORT"
-            ? Number((scenarioPrice + risk).toFixed(2))
-            : null,
+        referenceSide === "LONG"
+          ? Number((scenarioPrice - referenceRisk).toFixed(2))
+          : Number((scenarioPrice + referenceRisk).toFixed(2)),
       target1:
-        scenarioVerdict === "LONG"
-          ? Number(
-              (scenarioPrice + risk * rewardRisk).toFixed(2)
-            )
-          : scenarioVerdict === "SHORT"
-            ? Number(
-                (scenarioPrice - risk * rewardRisk).toFixed(2)
-              )
-            : null,
+        referenceSide === "LONG"
+          ? Number((scenarioPrice + referenceRisk * 2).toFixed(2))
+          : Number((scenarioPrice - referenceRisk * 2).toFixed(2)),
       target2:
-        scenarioVerdict === "LONG"
-          ? Number(
-              (scenarioPrice + risk * rewardRisk * 1.5).toFixed(2)
-            )
-          : scenarioVerdict === "SHORT"
-            ? Number(
-                (scenarioPrice - risk * rewardRisk * 1.5).toFixed(2)
-              )
-            : null,
+        referenceSide === "LONG"
+          ? Number((scenarioPrice + referenceRisk * 3).toFixed(2))
+          : Number((scenarioPrice - referenceRisk * 3).toFixed(2)),
+      side: referenceSide,
+      active:
+        scenarioVerdict === "LONG" ||
+        scenarioVerdict === "SHORT",
     };
-
-    const confidence = Math.round(
-      55 +
-        Math.min(
-          35,
-          Math.abs(weightedScore) * 30
-        )
-    );
 
     return NextResponse.json({
       success: true,
