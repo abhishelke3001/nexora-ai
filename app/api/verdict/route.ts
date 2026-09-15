@@ -147,6 +147,100 @@ export async function GET(request: Request) {
             )
           );
 
+    const entry =
+      technical.ai?.entry != null
+        ? Number(technical.ai.entry)
+        : null;
+
+    const stopLoss =
+      technical.ai?.stopLoss != null
+        ? Number(technical.ai.stopLoss)
+        : null;
+
+    const target1 =
+      technical.ai?.target1 != null
+        ? Number(technical.ai.target1)
+        : null;
+
+    const target2 =
+      technical.ai?.target2 != null
+        ? Number(technical.ai.target2)
+        : null;
+
+    let riskReward: number | null = null;
+
+    if (
+      verdict !== "WAIT" &&
+      entry != null &&
+      stopLoss != null &&
+      target1 != null
+    ) {
+      const risk = Math.abs(entry - stopLoss);
+      const reward = Math.abs(target1 - entry);
+
+      if (risk > 0) {
+        riskReward = Number((reward / risk).toFixed(2));
+      }
+    }
+
+    let setupQuality: "A" | "B" | "C" = "C";
+
+    if (
+      verdict !== "WAIT" &&
+      laneAgreement >= 3 &&
+      confidence >= 75 &&
+      riskReward != null &&
+      riskReward >= 1.5
+    ) {
+      setupQuality = "A";
+    } else if (
+      verdict !== "WAIT" &&
+      laneAgreement >= 2 &&
+      confidence >= 65
+    ) {
+      setupQuality = "B";
+    }
+
+    const tradeable =
+      verdict !== "WAIT" &&
+      setupQuality !== "C" &&
+      entry != null &&
+      stopLoss != null &&
+      target1 != null;
+
+    const confirmationLabels = [
+      technicalScore === (verdict === "LONG" ? 1 : -1)
+        ? "Technical"
+        : null,
+      flowScore === (verdict === "LONG" ? 1 : -1)
+        ? "Flow"
+        : null,
+      newsScore === (verdict === "LONG" ? 1 : -1)
+        ? "News"
+        : null,
+      macroScore === (verdict === "LONG" ? 1 : -1)
+        ? "Macro"
+        : null,
+    ].filter(Boolean) as string[];
+
+    const invalidation =
+      verdict === "LONG"
+        ? stopLoss != null
+          ? `1H close below ${stopLoss}`
+          : "Technical structure turns bearish"
+        : verdict === "SHORT"
+          ? stopLoss != null
+            ? `1H close above ${stopLoss}`
+            : "Technical structure turns bullish"
+          : "No active trade. Wait for stronger lane alignment.";
+
+    const setupReason =
+      verdict === "WAIT"
+        ? "Lane alignment is not strong enough for a high-quality setup."
+        : tradeable
+          ? `${confirmationLabels.length}/4 confirmation lanes aligned.`
+          : "Directional bias exists, but the setup does not meet quality criteria.";
+
     return NextResponse.json({
       success: true,
       mode: "LIVE_FOUR_LANE_VERDICT",
@@ -177,14 +271,26 @@ export async function GET(request: Request) {
         },
       },
       levels: {
-        entry: technical.ai?.entry ?? null,
-        stopLoss: technical.ai?.stopLoss ?? null,
-        target1: technical.ai?.target1 ?? null,
-        target2: technical.ai?.target2 ?? null,
+        entry: tradeable ? entry : null,
+        stopLoss: tradeable ? stopLoss : null,
+        target1: tradeable ? target1 : null,
+        target2: tradeable ? target2 : null,
       },
+
+      setup: {
+        tradeable,
+        quality: setupQuality,
+        confirmationCount: confirmationLabels.length,
+        confirmations: confirmationLabels,
+        riskReward,
+        invalidation,
+        reason: setupReason,
+      },
+
       reasoning:
         technical.ai?.reasoning ||
         "NEXORA evaluated Technical, Flow, News and Macro lanes.",
+
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
