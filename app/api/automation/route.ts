@@ -20,19 +20,6 @@ const CRYPTO = new Set([
 ]);
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-
-  if (secret) {
-    const auth = request.headers.get("authorization");
-
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-  }
-
   const apiKey = process.env.TWELVE_DATA_API_KEY;
 
   if (!apiKey) {
