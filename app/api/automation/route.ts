@@ -1,24 +1,5 @@
 import { NextResponse } from "next/server";
 
-const SYMBOLS = [
-  "BTC/USD",
-  "ETH/USD",
-  "SOL/USD",
-  "BNB/USD",
-  "XRP/USD",
-  "EUR/USD",
-  "GBP/USD",
-  "USD/JPY",
-];
-
-const CRYPTO = new Set([
-  "BTC/USD",
-  "ETH/USD",
-  "SOL/USD",
-  "BNB/USD",
-  "XRP/USD",
-]);
-
 export async function GET(request: Request) {
   const apiKey = process.env.TWELVE_DATA_API_KEY;
 
@@ -29,50 +10,63 @@ export async function GET(request: Request) {
     );
   }
 
-  const results = [];
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "https://nexora-ai-two-delta.vercel.app";
 
-  for (const symbol of SYMBOLS) {
-    try {
-      const url = new URL("https://api.twelvedata.com/quote");
-      url.searchParams.set("symbol", symbol);
-      url.searchParams.set("apikey", apiKey);
+  try {
+    const analyzeUrl = new URL("/api/analyze", baseUrl);
+    analyzeUrl.searchParams.set("symbol", "BTC/USD");
+    analyzeUrl.searchParams.set("timeframe", "1h");
 
-      const response = await fetch(url.toString(), {
-        next: { revalidate: 60 },
-      });
+    const response = await fetch(analyzeUrl.toString(), {
+      method: "POST",
+      cache: "no-store",
+    });
 
-      const data = await response.json();
+    const analysis = await response.json();
 
-      if (!response.ok || data.status === "error") {
-        results.push({
-          symbol,
-          status: "ERROR",
-          error: data.message || "Market data unavailable",
-        });
-        continue;
-      }
-
-      results.push({
-        symbol,
-        market: CRYPTO.has(symbol) ? "CRYPTO" : "FOREX",
-        price: Number(data.close),
-        change24h: Number(data.percent_change),
-        status: "LIVE",
-      });
-    } catch (error) {
-      results.push({
-        symbol,
-        status: "ERROR",
-        error:
-          error instanceof Error ? error.message : "Unknown error",
-      });
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Analysis failed",
+          details: analysis,
+        },
+        { status: 500 }
+      );
     }
-  }
 
-  return NextResponse.json({
-    success: true,
-    mode: "LIVE",
-    timestamp: new Date().toISOString(),
-    results,
-  });
+    const ai = analysis.ai || {};
+
+    const result = {
+      symbol: "BTC/USD",
+      price: analysis.price ?? ai.entry ?? null,
+      verdict: ai.verdict ?? "WAIT",
+      confidence: ai.confidence ?? 0,
+      risk: ai.risk ?? "MEDIUM",
+      reasoning: ai.reasoning ?? ai.reason ?? "",
+      entry: ai.entry ?? null,
+      stopLoss: ai.stopLoss ?? null,
+      target1: ai.target1 ?? null,
+      target2: ai.target2 ?? null,
+      source: ai.source ?? "NEXORA AI",
+      timestamp: new Date().toISOString(),
+    };
+
+    return NextResponse.json({
+      success: true,
+      mode: "LIVE_AI",
+      result,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Automation failed",
+      },
+      { status: 500 }
+    );
+  }
 }
