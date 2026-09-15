@@ -112,7 +112,11 @@ function parseStrategy(prompt: string): Strategy {
 
   const entryRules: string[] = [];
 
-  if (text.includes("price above ema20")) {
+  if (
+    text.includes("price is above ema20") ||
+    text.includes("price above ema20") ||
+    text.includes("above ema20")
+  ) {
     entryRules.push("PRICE_ABOVE_EMA20");
   }
 
@@ -120,7 +124,11 @@ function parseStrategy(prompt: string): Strategy {
     entryRules.push("PRICE_BELOW_EMA20");
   }
 
-  if (text.includes("price above ema50")) {
+  if (
+    text.includes("price is above ema50") ||
+    text.includes("price above ema50") ||
+    text.includes("above ema50")
+  ) {
     entryRules.push("PRICE_ABOVE_EMA50");
   }
 
@@ -130,14 +138,16 @@ function parseStrategy(prompt: string): Strategy {
 
   if (
     text.includes("ema20 above ema50") ||
-    text.includes("ema20 > ema50")
+    text.includes("ema20 > ema50") ||
+    text.includes("ema20 is above ema50")
   ) {
     entryRules.push("EMA20_ABOVE_EMA50");
   }
 
   if (
     text.includes("ema20 below ema50") ||
-    text.includes("ema20 < ema50")
+    text.includes("ema20 < ema50") ||
+    text.includes("ema20 is below ema50")
   ) {
     entryRules.push("EMA20_BELOW_EMA50");
   }
