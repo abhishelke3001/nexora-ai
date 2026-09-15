@@ -59,7 +59,7 @@ export default function PaperTradingPage() {
     }
 
     loadPrices();
-    const id = setInterval(loadPrices, 10000);
+    const id = setInterval(loadPrices, 300000);
     return () => clearInterval(id);
   }, []);
 
