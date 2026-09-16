@@ -1,4 +1,4 @@
-name: NEXORA Market Scanner
+name: NEXORA Scanner
 
 on:
   schedule:
@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Run NEXORA scanner
+      - name: Trigger NEXORA scanner
+        env:
+          NEXORA_URL: ${{ secrets.NEXORA_PRODUCTION_URL }}
+          NEXORA_CRON_SECRET: ${{ secrets.NEXORA_CRON_SECRET }}
         run: |
-          curl -fsS "https://YOUR-VERCEL-DOMAIN.vercel.app/api/automation/scan"
+          curl --fail-with-body \
+            -H "Authorization: Bearer ${NEXORA_CRON_SECRET}" \
+            "${NEXORA_URL}/api/automation/scan"
