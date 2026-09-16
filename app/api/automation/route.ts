@@ -41,6 +41,7 @@ export async function GET(request: Request) {
     });
 
     const verdict = await verdictResponse.json();
+    const setup = verdict.setup ?? {};
 
     if (!verdictResponse.ok || !verdict.success) {
       return NextResponse.json(
@@ -76,6 +77,9 @@ export async function GET(request: Request) {
       macro_score:
         verdict.lanes?.macro?.score ?? 0,
       reasoning: verdict.reasoning ?? "",
+      setup_quality: setup.quality ?? "C",
+      risk_reward: setup.riskReward ?? null,
+      confirmation_count: setup.confirmationCount ?? 0,
       telegram_sent: false,
     };
 
@@ -83,7 +87,7 @@ export async function GET(request: Request) {
       await supabase
         .from("signal_history")
         .select(
-          "verdict,confidence,entry,stop_loss,target1,target2,telegram_sent,created_at"
+          "id,verdict,confidence,entry,stop_loss,target1,target2,telegram_sent,created_at"
         )
         .eq("symbol", signal.symbol)
         .order("created_at", { ascending: false })
@@ -102,8 +106,13 @@ export async function GET(request: Request) {
     const previous = previousSignals?.[0] ?? null;
 
     const actionable =
+      setup.tradeable === true &&
+      setup.quality === "A" &&
       (signal.verdict === "LONG" || signal.verdict === "SHORT") &&
-      signal.confidence >= 65;
+      Number.isFinite(Number(signal.entry)) &&
+      Number.isFinite(Number(signal.stop_loss)) &&
+      Number.isFinite(Number(signal.target1)) &&
+      Number.isFinite(Number(signal.target2));
 
     const sameAsPrevious =
       Boolean(previous) &&
@@ -124,6 +133,9 @@ export async function GET(request: Request) {
         `Asset: ${signal.symbol}`,
         `Verdict: ${signal.verdict}`,
         `Confidence: ${signal.confidence}%`,
+        `Setup Quality: ${setup.quality ?? "—"}`,
+        `R:R: ${setup.riskReward ?? "—"}`,
+        `Confirmations: ${setup.confirmationCount ?? 0}/4`,
         "",
         `Technical: ${signal.technical_verdict} (${signal.technical_confidence}%)`,
         `Flow: ${signal.flow_verdict} (${signal.flow_confidence}%)`,
@@ -155,6 +167,24 @@ export async function GET(request: Request) {
       signal.telegram_sent = telegramSent;
     }
 
+    if (sameAsPrevious) {
+      return NextResponse.json({
+        success: true,
+        mode: "LIVE_FOUR_LANE_AUTOMATION",
+        symbol: signal.symbol,
+        verdict: signal.verdict,
+        confidence: signal.confidence,
+        actionable,
+        duplicate: true,
+        telegramSent: false,
+        signalId: previous?.id ?? null,
+        lanes: verdict.lanes,
+        levels: verdict.levels,
+        setup,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     const { data: insertedSignal, error: insertError } =
       await supabase
         .from("signal_history")
@@ -179,11 +209,12 @@ export async function GET(request: Request) {
       verdict: signal.verdict,
       confidence: signal.confidence,
       actionable,
-      duplicate: sameAsPrevious,
+      duplicate: false,
       telegramSent,
       signalId: insertedSignal.id,
       lanes: verdict.lanes,
       levels: verdict.levels,
+      setup,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
