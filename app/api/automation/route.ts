@@ -105,6 +105,8 @@ export async function GET(request: Request) {
 
     const previous = previousSignals?.[0] ?? null;
 
+    const riskReward = Number(setup.riskReward);
+
     const actionable =
       setup.tradeable === true &&
       setup.quality === "A" &&
@@ -112,7 +114,11 @@ export async function GET(request: Request) {
       Number.isFinite(Number(signal.entry)) &&
       Number.isFinite(Number(signal.stop_loss)) &&
       Number.isFinite(Number(signal.target1)) &&
-      Number.isFinite(Number(signal.target2));
+      Number.isFinite(Number(signal.target2)) &&
+      Number.isFinite(riskReward) &&
+      riskReward >= 2 &&
+      Number.isFinite(Number(setup.riskPerUnit)) &&
+      Number(setup.riskPerUnit) > 0;
 
     const sameAsPrevious =
       Boolean(previous) &&
