@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     }
 
     const response = await fetch(
-      `https://api.twelvedata.com/time_series?symbol=BTC%2FUSD&interval=1h&outputsize=200&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`,
+      `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1h&outputsize=200&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`,
       { cache: "no-store" }
     );
 
@@ -33,6 +33,16 @@ export async function GET(request: Request) {
       !Array.isArray(result.values)
     ) {
       throw new Error(result.message || "Technical market data request failed.");
+    }
+
+    if (
+      result.symbol &&
+      typeof result.symbol === "string" &&
+      result.symbol.toUpperCase() !== symbol.toUpperCase()
+    ) {
+      throw new Error(
+        `Market data symbol mismatch: requested ${symbol}, received ${result.symbol}`
+      );
     }
 
     const values = result.values.slice().reverse();
@@ -50,6 +60,11 @@ export async function GET(request: Request) {
     const ema20 = EMA.calculate({
       values: closes,
       period: 20,
+    });
+
+    const ema50 = EMA.calculate({
+      values: closes,
+      period: 50,
     });
 
     const sma20 = SMA.calculate({
@@ -80,6 +95,7 @@ export async function GET(request: Request) {
       price,
       rsi: rsi[rsi.length - 1],
       ema20: ema20[ema20.length - 1],
+      ema50: ema50[ema50.length - 1],
       sma20: sma20[sma20.length - 1],
       macd: macd[macd.length - 1],
       atr: atr[atr.length - 1],

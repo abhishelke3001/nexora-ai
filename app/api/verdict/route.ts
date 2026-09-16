@@ -13,9 +13,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get("symbol") || "BTC/USD";
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "https://nexora-ai-two-delta.vercel.app";
+    const baseUrl = new URL(request.url).origin;
 
     const technicalUrl = new URL("/api/analyze", baseUrl);
     technicalUrl.searchParams.set("symbol", symbol);
@@ -29,43 +27,68 @@ export async function GET(request: Request) {
 
     const macroUrl = new URL("/api/macro", baseUrl);
 
-    const [technicalResponse, flowResponse, newsResponse, macroResponse] =
-      await Promise.all([
-        fetch(technicalUrl.toString(), {
-          method: "POST",
+    async function safeJson(
+      url: URL,
+      init?: RequestInit
+    ) {
+      try {
+        const response = await fetch(url.toString(), {
+          ...init,
           cache: "no-store",
-        }),
-        fetch(flowUrl.toString(), {
-          cache: "no-store",
-        }),
-        fetch(newsUrl.toString(), {
-          cache: "no-store",
-        }),
-        fetch(macroUrl.toString(), {
-          cache: "no-store",
-        }),
-      ]);
+        });
 
-    const [technical, flow, news, macro] = await Promise.all([
-      technicalResponse.json(),
-      flowResponse.json(),
-      newsResponse.json(),
-      macroResponse.json(),
+        const data = await response.json().catch(() => ({}));
+
+        return {
+          ok: response.ok,
+          data,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          data: {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Lane request failed",
+          },
+        };
+      }
+    }
+
+    const [
+      technicalResult,
+      flowResult,
+      newsResult,
+      macroResult,
+    ] = await Promise.all([
+      safeJson(technicalUrl, { method: "POST" }),
+      safeJson(flowUrl),
+      safeJson(newsUrl),
+      safeJson(macroUrl),
     ]);
 
-    if (!technicalResponse.ok || !flowResponse.ok) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Core analysis lanes failed",
-          technical,
-          flow,
-          news,
-          macro,
-        },
-        { status: 500 }
-      );
-    }
+    const technical = technicalResult.data;
+    const flow = flowResult.data;
+    const news = newsResult.data;
+    const macro = macroResult.data;
+
+    const laneAvailability = {
+      technical: technicalResult.ok,
+      flow: flowResult.ok,
+      news: newsResult.ok,
+      macro: macroResult.ok,
+    };
+
+    /*
+     * A missing lane is never interpreted as bullish, bearish, or neutral.
+     * The safest behavior is WAIT and no trade.
+     */
+    const allCoreLanesAvailable =
+      laneAvailability.technical &&
+      laneAvailability.flow &&
+      laneAvailability.news &&
+      laneAvailability.macro;
 
     const technicalVerdict: Verdict =
       technical.ai?.verdict === "LONG"
@@ -116,6 +139,75 @@ export async function GET(request: Request) {
     const technicalConfidence = Number(
       technical.ai?.confidence || 0
     );
+
+    if (!allCoreLanesAvailable) {
+      return NextResponse.json({
+        success: true,
+        mode: "LIVE_FOUR_LANE_VERDICT",
+        symbol,
+        verdict: "WAIT",
+        confidence: 50,
+        lanes: {
+          technical: {
+            verdict:
+              technical.ai?.verdict === "LONG"
+                ? "LONG"
+                : technical.ai?.verdict === "SHORT"
+                  ? "SHORT"
+                  : "WAIT",
+            confidence: technicalConfidence,
+            available: laneAvailability.technical,
+          },
+          flow: {
+            verdict:
+              flow.verdict === "LONG"
+                ? "LONG"
+                : flow.verdict === "SHORT"
+                  ? "SHORT"
+                  : "WAIT",
+            confidence: Number(flow.confidence || 0),
+            available: laneAvailability.flow,
+          },
+          news: {
+            sentiment: news.sentiment ?? "NEUTRAL",
+            score: news.score ?? 0,
+            available: laneAvailability.news,
+            error: laneAvailability.news ? null : news.error ?? "News unavailable",
+          },
+          macro: {
+            bias: macro.bias ?? "NEUTRAL",
+            score: macro.score ?? 0,
+            available: laneAvailability.macro,
+            error: laneAvailability.macro ? null : macro.error ?? "Macro unavailable",
+          },
+        },
+        levels: {
+          entry: null,
+          stopLoss: null,
+          target1: null,
+          target2: null,
+        },
+        setup: {
+          tradeable: false,
+          quality: "C",
+          confirmationCount: 0,
+          confirmations: [],
+          riskReward: null,
+          invalidation: "No active trade. Required market data is unavailable.",
+          reason: "WAIT: one or more required analysis lanes are unavailable.",
+          accountSize: 10000,
+          riskPercent: 1,
+          riskCapital: 100,
+          riskPerUnit: null,
+          positionSize: null,
+          positionNotional: null,
+          dataAvailable: laneAvailability,
+        },
+        reasoning: "NEXORA requires all four analysis lanes before activating a trade.",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
 
     const flowConfidence = Number(
       flow.confidence || 0
@@ -201,14 +293,37 @@ export async function GET(request: Request) {
       setupQuality = "B";
     }
 
-    const tradeable =
-      verdict !== "WAIT" &&
-      setupQuality !== "C" &&
+    const riskPerUnit =
+      entry != null &&
+      stopLoss != null &&
+      Number.isFinite(entry) &&
+      Number.isFinite(stopLoss)
+        ? Math.abs(entry - stopLoss)
+        : null;
+
+    const validRiskPerUnit =
+      riskPerUnit != null &&
+      Number.isFinite(riskPerUnit) &&
+      riskPerUnit > 0;
+
+    const validTradeLevels =
       entry != null &&
       stopLoss != null &&
       target1 != null &&
+      target2 != null &&
+      Number.isFinite(entry) &&
+      Number.isFinite(stopLoss) &&
+      Number.isFinite(target1) &&
+      Number.isFinite(target2);
+
+    const tradeable =
+      verdict !== "WAIT" &&
+      setupQuality === "A" &&
+      validTradeLevels &&
+      validRiskPerUnit &&
       riskReward != null &&
-      riskReward >= 1.5;
+      Number.isFinite(riskReward) &&
+      riskReward >= 2.0;
 
     const confirmationLabels = [
       technicalScore === (verdict === "LONG" ? 1 : -1)
@@ -230,18 +345,15 @@ export async function GET(request: Request) {
 
     const riskCapital = accountSize * (riskPercent / 100);
 
-    const riskPerUnit =
-      entry != null && stopLoss != null
-        ? Math.abs(entry - stopLoss)
-        : null;
-
     const positionSize =
-      riskPerUnit != null && riskPerUnit > 0
+      validRiskPerUnit && validTradeLevels
         ? Number((riskCapital / riskPerUnit).toFixed(8))
         : null;
 
     const positionNotional =
-      positionSize != null && entry != null
+      positionSize != null &&
+      entry != null &&
+      Number.isFinite(entry)
         ? Number((positionSize * entry).toFixed(2))
         : null;
 
