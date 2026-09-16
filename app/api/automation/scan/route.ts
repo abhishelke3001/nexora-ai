@@ -92,6 +92,17 @@ export async function GET(request: Request) {
   const started = Date.now();
 
   try {
+    const expectedSecret = process.env.NEXORA_CRON_SECRET;
+    const providedSecret =
+      request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+      new URL(request.url).searchParams.get("secret");
+
+    if (!expectedSecret || providedSecret !== expectedSecret) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
     const origin = new URL(request.url).origin;
 
     /*
