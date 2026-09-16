@@ -18,7 +18,8 @@ type ScannerResult = {
   actionable: boolean;
   duplicate: boolean;
   telegramSent: boolean;
-  error: string | null;
+  error: string | null; 
+  signalId: string | null;
 };
 
 type ScannerResponse = {
