@@ -111,6 +111,10 @@ export async function GET(request: Request) {
       }));
     }
 
+    if (!values) {
+      throw new Error(`No technical market data available for ${symbol}`);
+    }
+
     const highs = values.map((c) => c.high);
     const lows = values.map((c) => c.low);
     const closes = values.map((c) => c.close);
