@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+
 import Sidebar from "./components/Sidebar";
 import BtcChart from "./components/BtcChart";
 
@@ -10,30 +11,19 @@ type Market = {
   change24h: number | null;
 };
 
-type ScannerResult = {
-  symbol: string;
-  success: boolean;
-  verdict: "LONG" | "SHORT" | "WAIT" | null;
-  confidence: number | null;
-  actionable: boolean;
-  duplicate: boolean;
-  telegramSent: boolean;
-  signalId: string | null;
-  error: string | null;
-};
-
-type ScannerResponse = {
-  success: boolean;
-  scanned: number;
-  batch?: string[];
-  totalSupported?: number;
-  unsupported?: string[];
-  actionableCount: number;
-  actionable: ScannerResult[];
-  results: ScannerResult[];
-  durationMs?: number;
-  batchSize?: number;
-  cycleMinutes?: number;
+type HealthResponse = {
+  configured: boolean;
+  status: string;
+  scanner: {
+    schedule: string;
+    batchSize: number;
+    cycleMinutes: number;
+    supportedMarkets: number;
+    telegram: boolean;
+    twelveData: boolean;
+    openAI: boolean;
+  };
+  timestamp: string;
 };
 
 function formatPrice(value: number) {
@@ -42,23 +32,12 @@ function formatPrice(value: number) {
   });
 }
 
-function verdictClass(verdict: ScannerResult["verdict"]) {
-  if (verdict === "LONG") {
-    return "text-emerald-400";
-  }
-
-  if (verdict === "SHORT") {
-    return "text-red-400";
-  }
-
-  return "text-gray-400";
-}
-
 export default function Home() {
   const [markets, setMarkets] = useState<Market[]>([]);
-  const [scanner, setScanner] = useState<ScannerResponse | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+
   const [marketLoading, setMarketLoading] = useState(true);
-  const [scannerLoading, setScannerLoading] = useState(true);
+  const [healthLoading, setHealthLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   async function loadMarkets() {
@@ -67,10 +46,14 @@ export default function Home() {
         cache: "no-store",
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(`Market request failed: ${response.status}`);
+      }
+
+      const data: unknown = await response.json();
 
       if (Array.isArray(data)) {
-        setMarkets(data);
+        setMarkets(data as Market[]);
       }
     } catch (error) {
       console.error("Market load failed:", error);
@@ -80,27 +63,39 @@ export default function Home() {
     }
   }
 
-  async function loadScanner() {
+  async function loadHealth() {
     try {
-      const response = await fetch("/api/automation/scan", {
+      const response = await fetch("/api/cron-health", {
         cache: "no-store",
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(`Health request failed: ${response.status}`);
+      }
+
+      const data: unknown = await response.json();
 
       if (data && typeof data === "object") {
-        setScanner(data);
+        setHealth(data as HealthResponse);
       }
     } catch (error) {
-      console.error("Scanner load failed:", error);
+      console.error("Health load failed:", error);
     } finally {
-      setScannerLoading(false);
+      setHealthLoading(false);
     }
   }
 
   useEffect(() => {
     loadMarkets();
-    loadScanner();
+    loadHealth();
+
+    const marketTimer = window.setInterval(() => {
+      loadMarkets();
+    }, 30_000);
+
+    const healthTimer = window.setInterval(() => {
+      loadHealth();
+    }, 30_000);
 
     const source = new EventSource("/api/stream");
 
@@ -109,7 +104,7 @@ export default function Home() {
         const tick = JSON.parse(event.data);
 
         if (
-          tick.symbol &&
+          tick?.symbol &&
           typeof tick.price === "number"
         ) {
           setMarkets((current) =>
@@ -131,15 +126,13 @@ export default function Home() {
     };
 
     return () => {
+      window.clearInterval(marketTimer);
+      window.clearInterval(healthTimer);
       source.close();
     };
   }, []);
 
-  const actionableSignals = useMemo(
-    () => scanner?.actionable ?? [],
-    [scanner]
-  );
-
+  const systemLive = health?.status === "operational";
   const liveMarkets = markets.slice(0, 6);
 
   return (
@@ -159,17 +152,35 @@ export default function Home() {
                 Command Center
               </h1>
 
-              <p className="mt-2 text-sm text-gray-500">
-                Live market intelligence, automated scanning and
-                trade-quality monitoring.
+              <p className="mt-2 max-w-2xl text-sm text-gray-500">
+                Live market intelligence, automated scanning,
+                system health and trading infrastructure.
               </p>
             </div>
 
-            <div className="flex items-center gap-3 rounded-full border border-white/10 bg-[#0d1118] px-4 py-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />
-              <span className="text-xs font-medium text-emerald-300">
-                SYSTEM LIVE
+            <div className="flex w-fit items-center gap-3 rounded-full border border-white/10 bg-[#0d1118] px-4 py-2">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  systemLive
+                    ? "bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]"
+                    : "bg-yellow-400"
+                }`}
+              />
+
+              <span
+                className={`text-xs font-medium ${
+                  systemLive
+                    ? "text-emerald-300"
+                    : "text-yellow-300"
+                }`}
+              >
+                {healthLoading
+                  ? "CHECKING"
+                  : systemLive
+                    ? "SYSTEM LIVE"
+                    : "CHECK SYSTEM"}
               </span>
+
               {lastUpdated && (
                 <span className="text-xs text-gray-500">
                   {lastUpdated.toLocaleTimeString()}
@@ -179,28 +190,37 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Top status cards */}
+        {/* Status cards */}
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-5">
             <p className="text-xs uppercase tracking-wider text-gray-500">
               Scanner
             </p>
 
-            <div className="mt-3 flex items-end justify-between">
-              <p className="text-2xl font-semibold">
-                {scannerLoading
-                  ? "..."
-                  : `${scanner?.scanned ?? 0}`}
-              </p>
-
-              <span className="text-xs text-gray-500">
-                assets / run
-              </span>
-            </div>
+            <p className="mt-3 text-2xl font-semibold">
+              {healthLoading
+                ? "..."
+                : health?.scanner?.schedule ?? "—"}
+            </p>
 
             <p className="mt-2 text-xs text-gray-500">
-              {scanner?.batchSize ?? 3} per batch ·{" "}
-              {scanner?.cycleMinutes ?? 5} min cycle
+              Automated production schedule
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-5">
+            <p className="text-xs uppercase tracking-wider text-gray-500">
+              Batch Size
+            </p>
+
+            <p className="mt-3 text-2xl font-semibold">
+              {healthLoading
+                ? "..."
+                : health?.scanner?.batchSize ?? "—"}
+            </p>
+
+            <p className="mt-2 text-xs text-gray-500">
+              Assets scanned per cycle
             </p>
           </div>
 
@@ -209,44 +229,14 @@ export default function Home() {
               Supported Markets
             </p>
 
-            <div className="mt-3 flex items-end justify-between">
-              <p className="text-2xl font-semibold">
-                {scanner?.totalSupported ?? 13}
-              </p>
-
-              <span className="text-xs text-gray-500">
-                live universe
-              </span>
-            </div>
-
-            <p className="mt-2 text-xs text-gray-500">
-              XAG/USD + WTI/USD restricted on current data plan
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-5">
-            <p className="text-xs uppercase tracking-wider text-gray-500">
-              Actionable
+            <p className="mt-3 text-2xl font-semibold">
+              {healthLoading
+                ? "..."
+                : health?.scanner?.supportedMarkets ?? "—"}
             </p>
 
-            <div className="mt-3 flex items-end justify-between">
-              <p className="text-2xl font-semibold">
-                {scanner?.actionableCount ?? 0}
-              </p>
-
-              <span
-                className={`text-xs ${
-                  (scanner?.actionableCount ?? 0) > 0
-                    ? "text-emerald-400"
-                    : "text-gray-500"
-                }`}
-              >
-                A-grade only
-              </span>
-            </div>
-
             <p className="mt-2 text-xs text-gray-500">
-              No valid setup = no alert
+              Current scanner universe
             </p>
           </div>
 
@@ -255,255 +245,184 @@ export default function Home() {
               Telegram
             </p>
 
-            <div className="mt-3 flex items-end justify-between">
-              <p className="text-2xl font-semibold text-emerald-400">
-                CONNECTED
-              </p>
-            </div>
+            <p
+              className={`mt-3 text-2xl font-semibold ${
+                health?.scanner?.telegram
+                  ? "text-emerald-400"
+                  : "text-red-400"
+              }`}
+            >
+              {healthLoading
+                ? "..."
+                : health?.scanner?.telegram
+                  ? "READY"
+                  : "OFF"}
+            </p>
 
             <p className="mt-2 text-xs text-gray-500">
-              Alerts restricted to new qualified signals
+              Automated alert channel
             </p>
           </div>
         </section>
 
-        {/* Scanner */}
+        {/* Infrastructure status */}
         <section className="mt-6 rounded-2xl border border-white/10 bg-[#0d1118]">
-          <div className="flex flex-col gap-3 border-b border-white/10 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">
-                Live Scanner
-              </h2>
+          <div className="border-b border-white/10 p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  NEXORA Infrastructure
+                </h2>
 
-              <p className="mt-1 text-xs text-gray-500">
-                Current production scan batch
+                <p className="mt-1 text-xs text-gray-500">
+                  Production service health
+                </p>
+              </div>
+
+              <span
+                className={`w-fit rounded-full px-3 py-1 text-xs ${
+                  systemLive
+                    ? "bg-emerald-400/10 text-emerald-300"
+                    : "bg-yellow-400/10 text-yellow-300"
+                }`}
+              >
+                {health?.status ?? "Checking"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl bg-black/20 p-4">
+              <p className="text-xs text-gray-500">
+                Twelve Data
+              </p>
+
+              <p
+                className={`mt-2 text-sm font-medium ${
+                  health?.scanner?.twelveData
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}
+              >
+                {health?.scanner?.twelveData
+                  ? "Configured"
+                  : "Unavailable"}
               </p>
             </div>
 
-            <div className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-gray-400">
-              {scanner?.durationMs
-                ? `${(scanner.durationMs / 1000).toFixed(1)}s`
-                : "—"}{" "}
-              last run
+            <div className="rounded-xl bg-black/20 p-4">
+              <p className="text-xs text-gray-500">
+                OpenAI
+              </p>
+
+              <p
+                className={`mt-2 text-sm font-medium ${
+                  health?.scanner?.openAI
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}
+              >
+                {health?.scanner?.openAI
+                  ? "Configured"
+                  : "Unavailable"}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-black/20 p-4">
+              <p className="text-xs text-gray-500">
+                Telegram
+              </p>
+
+              <p
+                className={`mt-2 text-sm font-medium ${
+                  health?.scanner?.telegram
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}
+              >
+                {health?.scanner?.telegram
+                  ? "Configured"
+                  : "Unavailable"}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-black/20 p-4">
+              <p className="text-xs text-gray-500">
+                Cycle
+              </p>
+
+              <p className="mt-2 text-sm font-medium text-white">
+                {health?.scanner?.cycleMinutes ?? "—"} min
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Market snapshot */}
+        <section className="mt-6 rounded-2xl border border-white/10 bg-[#0d1118]">
+          <div className="border-b border-white/10 p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Market Snapshot
+                </h2>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  Live Twelve Data market feed
+                </p>
+              </div>
+
+              <span className="text-xs text-gray-500">
+                Auto refresh · 30s
+              </span>
             </div>
           </div>
 
           <div className="divide-y divide-white/5">
-            {scannerLoading ? (
-              <div className="p-5 text-sm text-gray-500">
-                Loading scanner...
+            {marketLoading ? (
+              <div className="p-6 text-sm text-gray-500">
+                Loading live markets...
               </div>
-            ) : scanner?.results?.length ? (
-              scanner.results.map((result) => (
+            ) : liveMarkets.length > 0 ? (
+              liveMarkets.map((market) => (
                 <div
-                  key={result.symbol}
-                  className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
+                  key={market.symbol}
+                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <p className="font-medium">
-                      {result.symbol}
+                    <p className="text-sm font-medium">
+                      {market.symbol}
                     </p>
 
                     <p className="mt-1 text-xs text-gray-500">
-                      {result.duplicate
-                        ? "Existing signal / duplicate protected"
-                        : result.error
-                          ? result.error
-                          : "Fresh analysis"}
+                      Twelve Data · Live
                     </p>
                   </div>
 
                   <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <p
-                        className={`font-semibold ${verdictClass(
-                          result.verdict
-                        )}`}
-                      >
-                        {result.verdict ?? "WAIT"}
-                      </p>
+                    <p className="font-medium">
+                      {formatPrice(market.price)}
+                    </p>
 
-                      <p className="mt-1 text-xs text-gray-500">
-                        {result.confidence ?? 0}% confidence
-                      </p>
-                    </div>
-
-                    <div
-                      className={`rounded-full px-3 py-1 text-xs ${
-                        result.actionable
-                          ? "bg-emerald-400/10 text-emerald-300"
-                          : "bg-white/5 text-gray-500"
+                    <p
+                      className={`w-20 text-right text-sm ${
+                        (market.change24h ?? 0) >= 0
+                          ? "text-emerald-400"
+                          : "text-red-400"
                       }`}
                     >
-                      {result.actionable
-                        ? "ACTIONABLE"
-                        : "WAIT"}
-                    </div>
+                      {market.change24h == null
+                        ? "—"
+                        : `${market.change24h >= 0 ? "+" : ""}${market.change24h.toFixed(2)}%`}
+                    </p>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="p-5 text-sm text-gray-500">
-                No scanner results yet.
+              <div className="p-6 text-sm text-gray-500">
+                No market data available.
               </div>
             )}
-          </div>
-        </section>
-
-        {/* Actionable signals */}
-        <section className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-2xl border border-white/10 bg-[#0d1118]">
-            <div className="border-b border-white/10 p-5">
-              <h2 className="text-lg font-semibold">
-                Active A-Grade Signals
-              </h2>
-
-              <p className="mt-1 text-xs text-gray-500">
-                Only new, tradeable setups appear here.
-              </p>
-            </div>
-
-            {actionableSignals.length === 0 ? (
-              <div className="p-8 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-gray-500">
-                  —
-                </div>
-
-                <p className="mt-4 text-sm font-medium text-gray-300">
-                  No active A-grade setup
-                </p>
-
-                <p className="mt-1 text-xs text-gray-500">
-                  NEXORA will remain silent until all trade
-                  requirements are satisfied.
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-white/5">
-                {actionableSignals.map((signal) => (
-                  <div
-                    key={signal.signalId ?? signal.symbol}
-                    className="p-5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold">
-                        {signal.symbol}
-                      </p>
-
-                      <span className="text-emerald-400">
-                        {signal.verdict}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                      <div className="rounded-xl bg-black/20 p-3">
-                        <p className="text-[10px] uppercase text-gray-500">
-                          Confidence
-                        </p>
-
-                        <p className="mt-1 font-medium">
-                          {signal.confidence ?? 0}%
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-black/20 p-3">
-                        <p className="text-[10px] uppercase text-gray-500">
-                          Telegram
-                        </p>
-
-                        <p className="mt-1 font-medium text-emerald-400">
-                          {signal.telegramSent
-                            ? "Sent"
-                            : "Pending"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-black/20 p-3">
-                        <p className="text-[10px] uppercase text-gray-500">
-                          Duplicate
-                        </p>
-
-                        <p className="mt-1 font-medium">
-                          {signal.duplicate
-                            ? "Yes"
-                            : "No"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-black/20 p-3">
-                        <p className="text-[10px] uppercase text-gray-500">
-                          Signal ID
-                        </p>
-
-                        <p className="mt-1 truncate text-xs text-gray-400">
-                          {signal.signalId ?? "—"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Market snapshot */}
-          <div className="rounded-2xl border border-white/10 bg-[#0d1118]">
-            <div className="border-b border-white/10 p-5">
-              <h2 className="text-lg font-semibold">
-                Market Snapshot
-              </h2>
-
-              <p className="mt-1 text-xs text-gray-500">
-                Live Twelve Data market feed
-              </p>
-            </div>
-
-            <div className="divide-y divide-white/5">
-              {marketLoading ? (
-                <div className="p-5 text-sm text-gray-500">
-                  Loading markets...
-                </div>
-              ) : liveMarkets.length ? (
-                liveMarkets.map((market) => (
-                  <div
-                    key={market.symbol}
-                    className="flex items-center justify-between p-4"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">
-                        {market.symbol}
-                      </p>
-
-                      <p className="mt-1 text-xs text-gray-500">
-                        Live
-                      </p>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="font-medium">
-                        {formatPrice(market.price)}
-                      </p>
-
-                      <p
-                        className={`mt-1 text-xs ${
-                          (market.change24h ?? 0) >= 0
-                            ? "text-emerald-400"
-                            : "text-red-400"
-                        }`}
-                      >
-                        {market.change24h == null
-                          ? "—"
-                          : `${market.change24h >= 0 ? "+" : ""}${market.change24h.toFixed(2)}%`}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-5 text-sm text-gray-500">
-                  No market data available.
-                </div>
-              )}
-            </div>
           </div>
         </section>
 
@@ -529,17 +448,104 @@ export default function Home() {
           <BtcChart />
         </section>
 
-        {/* Footer status */}
-        <div className="mt-6 flex flex-col gap-2 border-t border-white/5 pt-5 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+        {/* Automation summary */}
+        <section className="mt-6 grid gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-5">
+            <p className="text-xs uppercase tracking-wider text-gray-500">
+              Automation
+            </p>
+
+            <h3 className="mt-2 text-xl font-semibold">
+              Production scanner active
+            </h3>
+
+            <p className="mt-2 text-sm leading-6 text-gray-500">
+              GitHub Actions triggers the production scanner on
+              the configured schedule. The scanner processes a
+              rotating batch of supported markets and keeps
+              duplicate alert protection enabled.
+            </p>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-white/5 bg-black/20 p-4">
+                <p className="text-xs text-gray-500">
+                  Schedule
+                </p>
+
+                <p className="mt-1 text-sm font-medium">
+                  {health?.scanner?.schedule ?? "—"}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-white/5 bg-black/20 p-4">
+                <p className="text-xs text-gray-500">
+                  Batch
+                </p>
+
+                <p className="mt-1 text-sm font-medium">
+                  {health?.scanner?.batchSize ?? "—"} assets
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-[#0d1118] p-5">
+            <p className="text-xs uppercase tracking-wider text-gray-500">
+              Alert Policy
+            </p>
+
+            <h3 className="mt-2 text-xl font-semibold">
+              Strict trade filtering
+            </h3>
+
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between rounded-xl bg-black/20 p-3">
+                <span className="text-sm text-gray-400">
+                  New signal only
+                </span>
+
+                <span className="text-xs text-emerald-400">
+                  ACTIVE
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl bg-black/20 p-3">
+                <span className="text-sm text-gray-400">
+                  Telegram protection
+                </span>
+
+                <span className="text-xs text-emerald-400">
+                  ACTIVE
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl bg-black/20 p-3">
+                <span className="text-sm text-gray-400">
+                  Production secret
+                </span>
+
+                <span className="text-xs text-emerald-400">
+                  CONFIGURED
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="mt-8 flex flex-col gap-2 border-t border-white/5 pt-5 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
           <span>
-            NEXORA AI · Production intelligence engine
+            NEXORA AI · Production trading intelligence
           </span>
 
           <span>
-            Scanner:{" "}
-            {scanner?.success ? "Operational" : "Unavailable"}
+            {health?.timestamp
+              ? `Health checked ${new Date(
+                  health.timestamp
+                ).toLocaleTimeString()}`
+              : "Health status unavailable"}
           </span>
-        </div>
+        </footer>
       </main>
     </div>
   );
