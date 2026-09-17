@@ -388,25 +388,89 @@ No guaranteed-profit language.
     let ai: any;
 
     try {
-      const completion = await getOpenAI().chat.completions.create({
+      const response = await getOpenAI().responses.create({
         model: "gpt-5.6-luna",
-        response_format: { type: "json_object" },
-        messages: [
+        input: [
           {
             role: "system",
             content:
-              "You are a financial market analysis engine. Produce structured, probabilistic analysis only.",
+              "You are a financial market analysis engine. Produce conservative, probabilistic analysis only. Never claim certainty or guaranteed profit.",
           },
           {
             role: "user",
             content: prompt,
           },
         ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "nexora_market_analysis",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                verdict: {
+                  type: "string",
+                  enum: ["LONG", "SHORT", "WAIT"],
+                },
+                confidence: {
+                  type: "number",
+                },
+                trend: {
+                  type: "string",
+                },
+                momentum: {
+                  type: "string",
+                },
+                reason: {
+                  type: "string",
+                },
+                risk: {
+                  type: "string",
+                },
+                entry: {
+                  type: "number",
+                },
+                stopLoss: {
+                  type: "number",
+                },
+                target1: {
+                  type: "number",
+                },
+                target2: {
+                  type: "number",
+                },
+                signals: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                  },
+                },
+              },
+              required: [
+                "verdict",
+                "confidence",
+                "trend",
+                "momentum",
+                "reason",
+                "risk",
+                "entry",
+                "stopLoss",
+                "target1",
+                "target2",
+                "signals",
+              ],
+            },
+          },
+        },
       });
 
-      ai = JSON.parse(
-        completion.choices[0]?.message?.content || "{}"
-      );
+      ai = JSON.parse(response.output_text || "{}");
+
+      if (!ai || typeof ai !== "object") {
+        throw new Error("OpenAI returned invalid analysis JSON");
+      }
     } catch (aiError) {
       console.warn("AI quota/error, using deterministic fallback:", aiError);
 
