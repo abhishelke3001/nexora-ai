@@ -13,7 +13,15 @@ const xausSymbols: Record<string, string> = {
   "WTI/USD": "oil",
 };
 
-async function fetchXaus(symbol: string) {
+type Candle = {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+async function fetchXaus(symbol: string): Promise<Candle[] | null> {
   const xausSymbol = xausSymbols[symbol];
   if (!xausSymbol) return null;
 
@@ -44,7 +52,7 @@ async function fetchXaus(symbol: string) {
       close: Number(c.c),
       volume: Number(c.v ?? 0),
     }))
-    .filter((c: any) =>
+    .filter((c: Candle) =>
       [c.open, c.high, c.low, c.close, c.volume].every(Number.isFinite)
     );
 }
@@ -54,19 +62,15 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get("symbol") || "BTC/USD";
 
-    let values: Array<{
-      open: number;
-      high: number;
-      low: number;
-      close: number;
-      volume: number;
-    }> | null = null;
+    let values: Candle[];
 
     if (xausSymbols[symbol]) {
-      values = await fetchXaus(symbol);
-    }
-
-    if (!values) {
+      const xausValues = await fetchXaus(symbol);
+      if (!xausValues) {
+        throw new Error(`XAUS market data unavailable for ${symbol}`);
+      }
+      values = xausValues;
+    } else {
       const apiKey = process.env.TWELVE_DATA_API_KEY;
 
       if (!apiKey) {
@@ -111,14 +115,13 @@ export async function GET(request: Request) {
       }));
     }
 
-    const dataValues = values;
-    if (!dataValues || dataValues.length < 60) {
+    if (values.length < 60) {
       throw new Error(`Insufficient technical market data for ${symbol}`);
     }
 
-    const highs = dataValues.map((c) => c.high);
-    const lows = dataValues.map((c) => c.low);
-    const closes = dataValues.map((c) => c.close);
+    const highs = values.map((c) => c.high);
+    const lows = values.map((c) => c.low);
+    const closes = values.map((c) => c.close);
 
     const rsi = RSI.calculate({
       values: closes,
