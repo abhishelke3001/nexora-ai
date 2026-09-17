@@ -23,6 +23,12 @@ const supportedSymbols = [
   "WTI/USD",
 ] as const;
 
+const xausSymbols: Record<string, string> = {
+  "XAU/USD": "xau",
+  "XAG/USD": "silver",
+  "WTI/USD": "oil",
+};
+
 function getOpenAI() {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -153,7 +159,67 @@ function normalizeAi(raw: any): AiAnalysis {
   return result;
 }
 
+async function fetchXausMarketData(symbol: string): Promise<number[][]> {
+  const xausSymbol = xausSymbols[symbol];
+
+  if (!xausSymbol) {
+    throw new Error(`XAUS does not support ${symbol}`);
+  }
+
+  const url = new URL("https://xaus.com/api/v1/chart");
+  url.searchParams.set("symbol", xausSymbol);
+  url.searchParams.set("range", "3mo");
+  url.searchParams.set("interval", "1h");
+
+  const response = await fetch(url.toString(), {
+    next: { revalidate: 60 },
+  });
+
+  const data = await response.json();
+  const points = Array.isArray(data?.points) ? data.points : [];
+
+  if (
+    !response.ok ||
+    points.length < 60 ||
+    data?.data_state?.status === "unavailable"
+  ) {
+    throw new Error(
+      data?.error ||
+        `XAUS market data unavailable for ${symbol}`
+    );
+  }
+
+  const candles = points
+    .map((c: any) => [
+      Number(c.t) * 1000,
+      Number(c.o),
+      Number(c.h),
+      Number(c.l),
+      Number(c.c),
+      Number(c.v ?? 0),
+    ])
+    .filter((c: number[]) =>
+      c.every((value) => Number.isFinite(value))
+    );
+
+  if (candles.length < 60) {
+    throw new Error(`Insufficient XAUS candles for ${symbol}`);
+  }
+
+  return candles;
+}
+
 async function fetchMarketData(symbol: string): Promise<number[][]> {
+  const xausSupported = Boolean(xausSymbols[symbol]);
+
+  if (xausSupported) {
+    try {
+      return await fetchXausMarketData(symbol);
+    } catch (error) {
+      console.warn(`[NEXORA DATA] XAUS fallback failed for ${symbol}:`, error);
+    }
+  }
+
   const apiKey = process.env.TWELVE_DATA_API_KEY;
 
   if (!apiKey) {
@@ -499,7 +565,6 @@ async function runAnalysis(request: Request) {
   ai.cacheHit = cacheHit;
   ai.reasoning = ai.reasoning || ai.reason;
 
-  // Risk levels are always calculated from current market price + ATR.
   const riskMultiplier = 1.5;
   const target1Multiplier = 2.25;
   const target2Multiplier = 3.0;
