@@ -31,12 +31,58 @@ type Result = {
   telegramSent: boolean;
   signalId: string | null;
   error: string | null;
+  screened?: boolean;
+  aiCalled?: boolean;
 };
 
-async function scanOne(
-  origin: string,
-  symbol: string
-): Promise<Result> {
+type TechnicalData = {
+  price?: number;
+  rsi?: number;
+  ema20?: number;
+  ema50?: number;
+  macd?: {
+    histogram?: number;
+  };
+};
+
+function isStrongTechnicalCandidate(data: TechnicalData) {
+  const price = Number(data.price);
+  const rsi = Number(data.rsi);
+  const ema20 = Number(data.ema20);
+  const ema50 = Number(data.ema50);
+  const histogram = Number(data.macd?.histogram);
+
+  if (
+    !Number.isFinite(price) ||
+    !Number.isFinite(rsi) ||
+    !Number.isFinite(ema20) ||
+    !Number.isFinite(ema50) ||
+    !Number.isFinite(histogram)
+  ) {
+    return false;
+  }
+
+  const longCandidate =
+    price > ema20 &&
+    ema20 >= ema50 &&
+    histogram > 0 &&
+    rsi >= 52 &&
+    rsi <= 72;
+
+  const shortCandidate =
+    price < ema20 &&
+    ema20 <= ema50 &&
+    histogram < 0 &&
+    rsi >= 28 &&
+    rsi <= 48;
+
+  return longCandidate || shortCandidate;
+}
+
+async function fetchJson(
+  url: string,
+  init?: RequestInit
+) {
   const controller = new AbortController();
 
   const timer = setTimeout(
@@ -45,26 +91,126 @@ async function scanOne(
   );
 
   try {
-    const response = await fetch(
-      `${origin}/api/automation?symbol=${encodeURIComponent(symbol)}`,
-      {
-        cache: "no-store",
-        signal: controller.signal,
-      }
-    );
+    const response = await fetch(url, {
+      ...init,
+      cache: "no-store",
+      signal: controller.signal,
+    });
 
     const data = await response.json().catch(() => ({}));
 
     return {
+      ok: response.ok,
+      data,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      data: {
+        error:
+          error instanceof Error
+            ? error.name === "AbortError"
+              ? "Request timed out"
+              : error.message
+            : "Request failed",
+      },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function scanOne(
+  origin: string,
+  symbol: string
+): Promise<Result> {
+  try {
+    // Cheap technical pre-screen.
+    const technicalUrl = new URL(
+      "/api/technical",
+      origin
+    );
+
+    technicalUrl.searchParams.set("symbol", symbol);
+
+    const technical = await fetchJson(
+      technicalUrl.toString()
+    );
+
+    if (!technical.ok) {
+      return {
+        symbol,
+        success: false,
+        verdict: null,
+        confidence: null,
+        actionable: false,
+        duplicate: false,
+        telegramSent: false,
+        signalId: null,
+        error:
+          technical.data?.error ||
+          "Technical screening failed",
+        screened: false,
+        aiCalled: false,
+      };
+    }
+
+    const candidate = isStrongTechnicalCandidate(
+      technical.data as TechnicalData
+    );
+
+    // Weak setup: stop here and do not consume an OpenAI request.
+    if (!candidate) {
+      return {
+        symbol,
+        success: true,
+        verdict: "WAIT",
+        confidence: 50,
+        actionable: false,
+        duplicate: false,
+        telegramSent: false,
+        signalId: null,
+        error: null,
+        screened: true,
+        aiCalled: false,
+      };
+    }
+
+    // Strong technical candidate: allow the full AI/four-lane pipeline.
+    const automationUrl = new URL(
+      "/api/automation",
+      origin
+    );
+
+    automationUrl.searchParams.set(
+      "symbol",
+      symbol
+    );
+
+    const automation = await fetchJson(
+      automationUrl.toString()
+    );
+
+    return {
       symbol,
-      success: response.ok && data.success === true,
-      verdict: data.verdict ?? null,
-      confidence: data.confidence ?? null,
-      actionable: data.actionable === true,
-      duplicate: data.duplicate === true,
-      telegramSent: data.telegramSent === true,
-      signalId: data.signalId ?? null,
-      error: data.error ?? null,
+      success:
+        automation.ok &&
+        automation.data?.success === true,
+      verdict: automation.data?.verdict ?? null,
+      confidence:
+        automation.data?.confidence ?? null,
+      actionable:
+        automation.data?.actionable === true,
+      duplicate:
+        automation.data?.duplicate === true,
+      telegramSent:
+        automation.data?.telegramSent === true,
+      signalId:
+        automation.data?.signalId ?? null,
+      error:
+        automation.data?.error ?? null,
+      screened: true,
+      aiCalled: true,
     };
   } catch (error) {
     return {
@@ -78,13 +224,11 @@ async function scanOne(
       signalId: null,
       error:
         error instanceof Error
-          ? error.name === "AbortError"
-            ? "Scan timed out"
-            : error.message
+          ? error.message
           : "Scan failed",
+      screened: false,
+      aiCalled: false,
     };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -93,6 +237,7 @@ export async function GET(request: Request) {
 
   try {
     const requestUrl = new URL(request.url);
+
     const isLocalRequest =
       requestUrl.hostname === "localhost" ||
       requestUrl.hostname === "127.0.0.1";
@@ -109,25 +254,25 @@ export async function GET(request: Request) {
 
     if (
       !isLocalRequest &&
-      (!expectedSecret || providedSecret !== expectedSecret)
+      (!expectedSecret ||
+        providedSecret !== expectedSecret)
     ) {
       return NextResponse.json(
-        { success: false, error: "Unauthorized" },
+        {
+          success: false,
+          error: "Unauthorized",
+        },
         { status: 401 }
       );
     }
 
-    const origin = new URL(request.url).origin;
+    const origin = requestUrl.origin;
 
-    /*
-     * Rotate 3 instruments per minute.
-     * 13 supported instruments therefore complete a full cycle
-     * in 5 minutes while staying within the free Twelve Data limit.
-     */
     const minute = Math.floor(Date.now() / 60000);
 
     const batchStart =
-      (minute % Math.ceil(symbols.length / BATCH_SIZE)) *
+      (minute %
+        Math.ceil(symbols.length / BATCH_SIZE)) *
       BATCH_SIZE;
 
     const batch = symbols.slice(
@@ -136,43 +281,33 @@ export async function GET(request: Request) {
     );
 
     const results = await Promise.all(
-      batch.map((symbol) => scanOne(origin, symbol))
+      batch.map((symbol) =>
+        scanOne(origin, symbol)
+      )
     );
 
-    const unavailable: Result[] =
-      batch.length === 0
-        ? []
-        : unsupportedSymbols
-            .filter(() => false)
-            .map((symbol) => ({
-              symbol,
-              success: true,
-              verdict: "WAIT",
-              confidence: 0,
-              actionable: false,
-              duplicate: false,
-              telegramSent: false,
-              signalId: null,
-              error:
-                "Market data unavailable on current Twelve Data plan",
-            }));
-
-    const allResults = [...results, ...unavailable];
-
-    const actionable = allResults.filter(
+    const actionable = results.filter(
       (result) => result.actionable
     );
 
+    const aiCalls = results.filter(
+      (result) => result.aiCalled
+    ).length;
+
     return NextResponse.json({
       success: true,
-      scanned: allResults.length,
+      scanned: results.length,
       batch,
       batchStart,
       totalSupported: symbols.length,
       unsupported: unsupportedSymbols,
       actionableCount: actionable.length,
       actionable,
-      results: allResults,
+      aiCalls,
+      screenedCount: results.filter(
+        (result) => result.screened
+      ).length,
+      results,
       durationMs: Date.now() - started,
       batchSize: BATCH_SIZE,
       cycleMinutes: Math.ceil(

@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
     const response = await fetch(
       `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1h&outputsize=200&timezone=UTC&apikey=${encodeURIComponent(apiKey)}`,
-      { cache: "no-store" }
+      { next: { revalidate: 60 } }
     );
 
     const result = await response.json();
