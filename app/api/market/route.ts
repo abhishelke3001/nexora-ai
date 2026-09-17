@@ -1,21 +1,9 @@
 import { NextResponse } from "next/server";
 
-const symbols = [
+const dashboardSymbols = [
   "BTC/USD",
   "ETH/USD",
   "SOL/USD",
-  "BNB/USD",
-  "XRP/USD",
-  "XAU/USD",
-  "XAG/USD",
-  "WTI/USD",
-  "EUR/USD",
-  "GBP/USD",
-  "USD/JPY",
-  "USD/CHF",
-  "AUD/USD",
-  "USD/CAD",
-  "NZD/USD",
 ];
 
 export async function GET() {
@@ -24,38 +12,76 @@ export async function GET() {
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: "TWELVE_DATA_API_KEY is not configured." },
+        {
+          error:
+            "TWELVE_DATA_API_KEY is not configured.",
+        },
         { status: 500 }
       );
     }
 
     const url =
-      `https://api.twelvedata.com/quote` +
-      `?symbol=${encodeURIComponent(symbols.join(","))}` +
+      "https://api.twelvedata.com/quote" +
+      `?symbol=${encodeURIComponent(
+        dashboardSymbols.join(",")
+      )}` +
       `&apikey=${encodeURIComponent(apiKey)}`;
 
-    const response = await fetch(url, { next: { revalidate: 30 } });
-    const quote = await response.json();
-
-    if (!response.ok || quote.status === "error") {
-      throw new Error(quote.message || "Failed to fetch market data");
-    }
-
-    const data = symbols.map((symbol) => {
-      const q = quote[symbol] || {};
-      return {
-        symbol,
-        price: Number(q.close),
-        change24h: Number(q.percent_change),
-      };
+    const response = await fetch(url, {
+      next: {
+        revalidate: 60,
+      },
     });
 
-    return NextResponse.json(data);
-  } catch (error: any) {
-    console.error(error);
+    const quote = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        quote?.message || "Failed to fetch market data"
+      );
+    }
+
+    if (
+      quote?.status === "error" &&
+      quote?.message
+    ) {
+      throw new Error(quote.message);
+    }
+
+    const data = dashboardSymbols
+      .map((symbol) => {
+        const q = quote?.[symbol];
+
+        const price = Number(q?.close);
+        const change24h = Number(q?.percent_change);
+
+        return {
+          symbol,
+          price,
+          change24h,
+        };
+      })
+      .filter(
+        (item) =>
+          Number.isFinite(item.price)
+      );
+
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control":
+          "public, s-maxage=60, stale-while-revalidate=300",
+      },
+    });
+  } catch (error) {
+    console.error("Market API error:", error);
 
     return NextResponse.json(
-      { error: error?.message || "Market data request failed." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Market data request failed.",
+      },
       { status: 502 }
     );
   }
