@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 
 export async function GET() {
-  const secret = process.env.CRON_SECRET || "";
-
-  const fingerprint = crypto
-    .createHash("sha256")
-    .update(secret)
-    .digest("hex")
-    .slice(0, 12);
-
   return NextResponse.json({
-    configured: Boolean(secret),
-    fingerprint,
+    configured: Boolean(process.env.NEXORA_CRON_SECRET),
+    status: "operational",
+    scanner: {
+      schedule: "5m",
+      batchSize: 3,
+      cycleMinutes: 5,
+      supportedMarkets: 13,
+      telegram: Boolean(
+        process.env.TELEGRAM_BOT_TOKEN &&
+        process.env.TELEGRAM_CHAT_ID
+      ),
+      twelveData: Boolean(process.env.TWELVE_DATA_API_KEY),
+      openAI: Boolean(process.env.OPENAI_API_KEY),
+    },
+    timestamp: new Date().toISOString(),
   });
 }
