@@ -18,7 +18,11 @@ const symbols = [
 
 const unsupportedSymbols = ["XAG/USD", "WTI/USD"];
 
-const BATCH_SIZE = 3;
+// One symbol per scheduled run keeps Twelve Data usage and potential OpenAI
+// calls below the current free-tier daily limits while still rotating through
+// every supported symbol continuously.
+const BATCH_SIZE = 1;
+const SCAN_INTERVAL_MINUTES = 30;
 const REQUEST_TIMEOUT_MS = 20000;
 
 type Result = {
@@ -79,10 +83,7 @@ function isStrongTechnicalCandidate(data: TechnicalData) {
   return longCandidate || shortCandidate;
 }
 
-async function fetchJson(
-  url: string,
-  init?: RequestInit
-) {
+async function fetchJson(url: string, init?: RequestInit) {
   const controller = new AbortController();
 
   const timer = setTimeout(
@@ -120,10 +121,7 @@ async function fetchJson(
   }
 }
 
-async function scanOne(
-  origin: string,
-  symbol: string
-): Promise<Result> {
+async function scanOne(origin: string, symbol: string): Promise<Result> {
   try {
     // Cheap technical pre-screen.
     const technicalUrl = new URL(
@@ -133,9 +131,7 @@ async function scanOne(
 
     technicalUrl.searchParams.set("symbol", symbol);
 
-    const technical = await fetchJson(
-      technicalUrl.toString()
-    );
+    const technical = await fetchJson(technicalUrl.toString());
 
     if (!technical.ok) {
       return {
@@ -182,10 +178,7 @@ async function scanOne(
       origin
     );
 
-    automationUrl.searchParams.set(
-      "symbol",
-      symbol
-    );
+    automationUrl.searchParams.set("symbol", symbol);
 
     const automation = await fetchJson(
       automationUrl.toString()
@@ -197,18 +190,12 @@ async function scanOne(
         automation.ok &&
         automation.data?.success === true,
       verdict: automation.data?.verdict ?? null,
-      confidence:
-        automation.data?.confidence ?? null,
-      actionable:
-        automation.data?.actionable === true,
-      duplicate:
-        automation.data?.duplicate === true,
-      telegramSent:
-        automation.data?.telegramSent === true,
-      signalId:
-        automation.data?.signalId ?? null,
-      error:
-        automation.data?.error ?? null,
+      confidence: automation.data?.confidence ?? null,
+      actionable: automation.data?.actionable === true,
+      duplicate: automation.data?.duplicate === true,
+      telegramSent: automation.data?.telegramSent === true,
+      signalId: automation.data?.signalId ?? null,
+      error: automation.data?.error ?? null,
       screened: true,
       aiCalled: true,
     };
@@ -268,12 +255,13 @@ export async function GET(request: Request) {
 
     const origin = requestUrl.origin;
 
-    const minute = Math.floor(Date.now() / 60000);
+    const slot = Math.floor(
+      Date.now() /
+        (SCAN_INTERVAL_MINUTES * 60 * 1000)
+    );
 
     const batchStart =
-      (minute %
-        Math.ceil(symbols.length / BATCH_SIZE)) *
-      BATCH_SIZE;
+      (slot % symbols.length) * BATCH_SIZE;
 
     const batch = symbols.slice(
       batchStart,
@@ -310,9 +298,10 @@ export async function GET(request: Request) {
       results,
       durationMs: Date.now() - started,
       batchSize: BATCH_SIZE,
-      cycleMinutes: Math.ceil(
-        symbols.length / BATCH_SIZE
-      ),
+      cycleMinutes:
+        Math.ceil(symbols.length / BATCH_SIZE) *
+        SCAN_INTERVAL_MINUTES,
+      scanIntervalMinutes: SCAN_INTERVAL_MINUTES,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
