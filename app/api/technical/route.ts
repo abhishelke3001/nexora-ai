@@ -111,13 +111,14 @@ export async function GET(request: Request) {
       }));
     }
 
-    if (!values || values.length < 60) {
+    const dataValues = values;
+    if (!dataValues || dataValues.length < 60) {
       throw new Error(`Insufficient technical market data for ${symbol}`);
     }
 
-    const highs = values.map((c) => c.high);
-    const lows = values.map((c) => c.low);
-    const closes = values.map((c) => c.close);
+    const highs = dataValues.map((c) => c.high);
+    const lows = dataValues.map((c) => c.low);
+    const closes = dataValues.map((c) => c.close);
 
     const rsi = RSI.calculate({
       values: closes,
