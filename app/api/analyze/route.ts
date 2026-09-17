@@ -1,12 +1,27 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import {
-  RSI,
-  EMA,
-  SMA,
-  MACD,
-  ATR,
-} from "technicalindicators";
+import { createClient } from "@supabase/supabase-js";
+import { RSI, EMA, SMA, MACD, ATR } from "technicalindicators";
+
+const timeframe = "1h";
+
+const supportedSymbols = [
+  "BTC/USD",
+  "ETH/USD",
+  "SOL/USD",
+  "BNB/USD",
+  "XRP/USD",
+  "EUR/USD",
+  "GBP/USD",
+  "USD/JPY",
+  "USD/CHF",
+  "AUD/USD",
+  "USD/CAD",
+  "NZD/USD",
+  "XAU/USD",
+  "XAG/USD",
+  "WTI/USD",
+] as const;
 
 function getOpenAI() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -18,44 +33,22 @@ function getOpenAI() {
   return new OpenAI({ apiKey });
 }
 
-const cryptoSymbols = [
-  "BTC/USD",
-  "ETH/USD",
-  "SOL/USD",
-  "BNB/USD",
-  "XRP/USD",
-];
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const forexSymbols = [
-  "EUR/USD",
-  "GBP/USD",
-  "USD/JPY",
-  "USD/CHF",
-  "AUD/USD",
-  "USD/CAD",
-  "NZD/USD",
-];
-
-const commoditySymbols = [
-  "XAU/USD",
-  "XAG/USD",
-  "WTI/USD",
-];
-
-function getCryptoSymbol(symbol: string) {
-  if (!cryptoSymbols.includes(symbol)) {
-    throw new Error(`Unsupported crypto symbol: ${symbol}`);
+  if (!url || !key) {
+    throw new Error("Supabase server credentials are not configured");
   }
 
-  return symbol;
-}
-
-function getForexSymbol(symbol: string) {
-  if (!forexSymbols.includes(symbol)) {
-    throw new Error(`Unsupported forex symbol: ${symbol}`);
-  }
-
-  return symbol;
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }
 
 function structureAnalysis(ohlcv: number[][]) {
@@ -65,10 +58,9 @@ function structureAnalysis(ohlcv: number[][]) {
 
   const recentHighs = highs.slice(-21, -1);
   const recentLows = lows.slice(-21, -1);
-
   const highest = Math.max(...recentHighs);
   const lowest = Math.min(...recentLows);
-  const price = closes[closes.length - 1];
+  const price = closes.at(-1) ?? 0;
 
   const previousHigh = Math.max(...highs.slice(-40, -20));
   const previousLow = Math.min(...lows.slice(-40, -20));
@@ -84,13 +76,16 @@ function structureAnalysis(ohlcv: number[][]) {
     bos = "BEARISH BOS";
   }
 
+  const previousClose = closes.at(-2) ?? price;
   const displacement =
-    Math.abs(closes[closes.length - 1] - closes[closes.length - 2]) /
-    closes[closes.length - 2];
+    previousClose !== 0
+      ? Math.abs(price - previousClose) / Math.abs(previousClose)
+      : 0;
 
-  const liquiditySweep =
-    lows[lows.length - 1] < lowest ||
-    highs[highs.length - 1] > highest;
+  const lastLow = lows.at(-1) ?? 0;
+  const lastHigh = highs.at(-1) ?? 0;
+
+  const liquiditySweep = lastLow < lowest || lastHigh > highest;
 
   return {
     marketStructure,
@@ -102,270 +97,146 @@ function structureAnalysis(ohlcv: number[][]) {
   };
 }
 
-export async function POST(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
+type AiAnalysis = {
+  verdict: "LONG" | "SHORT" | "WAIT";
+  confidence: number;
+  trend: string;
+  momentum: string;
+  reason: string;
+  risk: string;
+  entry: number;
+  stopLoss: number;
+  target1: number;
+  target2: number;
+  signals: string[];
+  reasoning?: string;
+  source?: string;
+  cacheHit?: boolean;
+  candleTime?: string;
+};
 
-    const body = await request.json().catch(() => ({}));
+function normalizeAi(raw: any): AiAnalysis {
+  const verdict =
+    raw?.verdict === "LONG" || raw?.verdict === "SHORT" || raw?.verdict === "WAIT"
+      ? raw.verdict
+      : "WAIT";
 
-    const symbol =
-      (typeof body.symbol === "string" && body.symbol.trim()
-        ? body.symbol.trim().toUpperCase()
-        : searchParams.get("symbol")) || "BTC/USD";
+  const confidence = Number(raw?.confidence);
+  const finiteConfidence = Number.isFinite(confidence)
+    ? Math.max(0, Math.min(100, confidence))
+    : 50;
 
-    const mode =
-      (typeof body.mode === "string" && body.mode.trim()
-        ? body.mode.trim()
-        : searchParams.get("mode")) || "Technical";
+  const result: AiAnalysis = {
+    verdict,
+    confidence: finiteConfidence,
+    trend: typeof raw?.trend === "string" ? raw.trend : "UNKNOWN",
+    momentum:
+      typeof raw?.momentum === "string" ? raw.momentum : "UNKNOWN",
+    reason:
+      typeof raw?.reason === "string"
+        ? raw.reason
+        : typeof raw?.reasoning === "string"
+          ? raw.reasoning
+          : "No model reasoning returned.",
+    risk: typeof raw?.risk === "string" ? raw.risk : "MEDIUM",
+    entry: Number(raw?.entry),
+    stopLoss: Number(raw?.stopLoss),
+    target1: Number(raw?.target1),
+    target2: Number(raw?.target2),
+    signals: Array.isArray(raw?.signals)
+      ? raw.signals.filter((v: unknown) => typeof v === "string").slice(0, 12)
+      : [],
+  };
 
-    const isForex = forexSymbols.includes(symbol);
-    const isCommodity = commoditySymbols.includes(symbol);
+  result.reasoning = result.reason;
 
-    let ohlcv: number[][];
+  return result;
+}
 
-    if (!isForex && !isCommodity) {
-      const apiKey = process.env.TWELVE_DATA_API_KEY;
+async function fetchMarketData(symbol: string): Promise<number[][]> {
+  const apiKey = process.env.TWELVE_DATA_API_KEY;
 
-      if (!apiKey) {
-        return NextResponse.json(
-          { error: "TWELVE_DATA_API_KEY is not configured" },
-          { status: 500 }
-        );
-      }
+  if (!apiKey) {
+    throw new Error("TWELVE_DATA_API_KEY is not configured");
+  }
 
-      const cryptoSymbol = getCryptoSymbol(symbol);
+  const url = new URL("https://api.twelvedata.com/time_series");
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("interval", timeframe);
+  url.searchParams.set("outputsize", "250");
+  url.searchParams.set("timezone", "UTC");
+  url.searchParams.set("apikey", apiKey);
 
-      const url = new URL("https://api.twelvedata.com/time_series");
-      url.searchParams.set("symbol", cryptoSymbol);
-      url.searchParams.set("interval", "1h");
-      url.searchParams.set("outputsize", "250");
-      url.searchParams.set("timezone", "UTC");
-      url.searchParams.set("apikey", apiKey);
+  const response = await fetch(url.toString(), {
+    next: { revalidate: 30 },
+  });
 
-      const response = await fetch(url.toString(), {
-        next: { revalidate: 30 },
-      });
+  const data = await response.json();
 
-      const data = await response.json();
+  if (!response.ok || data.status === "error" || !Array.isArray(data.values)) {
+    throw new Error(data.message || "Failed to fetch market data");
+  }
 
-      if (!response.ok || data.status === "error" || !data.values) {
-        return NextResponse.json(
-          { error: data.message || "Failed to fetch crypto market data" },
-          { status: 502 }
-        );
-      }
+  return data.values
+    .slice()
+    .reverse()
+    .map((c: any) => [
+      new Date(c.datetime).getTime(),
+      Number(c.open),
+      Number(c.high),
+      Number(c.low),
+      Number(c.close),
+      Number(c.volume || 0),
+    ]);
+}
 
-      ohlcv = data.values.reverse().map((c: {
-        datetime: string;
-        open: string;
-        high: string;
-        low: string;
-        close: string;
-        volume?: string;
-      }) => [
-        new Date(c.datetime).getTime(),
-        Number(c.open),
-        Number(c.high),
-        Number(c.low),
-        Number(c.close),
-        Number(c.volume || 0),
-      ]);
-    } else if (isCommodity) {
-      const apiKey = process.env.TWELVE_DATA_API_KEY;
-
-      if (!apiKey) {
-        return NextResponse.json(
-          { error: "TWELVE_DATA_API_KEY is not configured." },
-          { status: 500 }
-        );
-      }
-
-      const url =
-        `https://api.twelvedata.com/time_series` +
-        `?symbol=${encodeURIComponent(symbol)}` +
-        `&interval=1h` +
-        `&outputsize=250` +
-        `&timezone=UTC` +
-        `&apikey=${encodeURIComponent(apiKey)}`;
-
-      const response = await fetch(url, {
-        next: { revalidate: 30 },
-      });
-
-      const commodity = await response.json();
-
-      if (
-        !response.ok ||
-        commodity.status === "error" ||
-        !Array.isArray(commodity.values)
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              commodity.message ||
-              "Commodity market data request failed.",
-          },
-          { status: 502 }
-        );
-      }
-
-      ohlcv = commodity.values
-        .slice()
-        .reverse()
-        .map((c: any) => [
-          new Date(c.datetime).getTime(),
-          Number(c.open),
-          Number(c.high),
-          Number(c.low),
-          Number(c.close),
-          Number(c.volume || 0),
-        ]);
-    } else {
-      const apiKey = process.env.TWELVE_DATA_API_KEY;
-
-      if (!apiKey) {
-        return NextResponse.json(
-          { error: "TWELVE_DATA_API_KEY is not configured." },
-          { status: 500 }
-        );
-      }
-
-      const url =
-        `https://api.twelvedata.com/time_series` +
-        `?symbol=${encodeURIComponent(symbol)}` +
-        `&interval=1h` +
-        `&outputsize=250` +
-        `&timezone=UTC` +
-        `&apikey=${encodeURIComponent(apiKey)}`;
-
-      const response = await fetch(url, {
-        next: { revalidate: 30 },
-      });
-
-      const fx = await response.json();
-
-      if (!response.ok || fx.status === "error" || !Array.isArray(fx.values)) {
-        return NextResponse.json(
-          {
-            error: fx.message || "Forex market data request failed.",
-          },
-          { status: 502 }
-        );
-      }
-
-      ohlcv = fx.values
-        .slice()
-        .reverse()
-        .map((c: any) => [
-          new Date(c.datetime).getTime(),
-          Number(c.open),
-          Number(c.high),
-          Number(c.low),
-          Number(c.close),
-          Number(c.volume || 0),
-        ]);
-    }
-
-    const closes = ohlcv.map((c) => c[4]);
-    const highs = ohlcv.map((c) => c[2]);
-    const lows = ohlcv.map((c) => c[3]);
-    const volumes = ohlcv.map((c) => c[5]);
-
-    const price = closes[closes.length - 1];
-
-    const rsiValues = RSI.calculate({
-      period: 14,
-      values: closes,
-    });
-
-    const ema20Values = EMA.calculate({
-      period: 20,
-      values: closes,
-    });
-
-    const ema50Values = EMA.calculate({
-      period: 50,
-      values: closes,
-    });
-
-    const sma20Values = SMA.calculate({
-      period: 20,
-      values: closes,
-    });
-
-    const macdValues = MACD.calculate({
-      values: closes,
-      fastPeriod: 12,
-      slowPeriod: 26,
-      signalPeriod: 9,
-      SimpleMAOscillator: false,
-      SimpleMASignal: false,
-    });
-
-    const atrValues = ATR.calculate({
-      period: 14,
-      high: highs,
-      low: lows,
-      close: closes,
-    });
-
-    const rsi = rsiValues.at(-1) ?? 50;
-    const ema20 = ema20Values.at(-1) ?? price;
-    const ema50 = ema50Values.at(-1) ?? price;
-    const sma20 = sma20Values.at(-1) ?? price;
-    const macd = macdValues.at(-1);
-    const atr = atrValues.at(-1) ?? 0;
-
-    const recentVolume =
-      volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
-
-    const currentVolume = volumes.at(-1) ?? 0;
-
-    const volumeRatio =
-      recentVolume > 0 ? currentVolume / recentVolume : 1;
-
-    const structure = structureAnalysis(ohlcv);
-
-    const prompt = `
+function buildPrompt(args: {
+  symbol: string;
+  mode: string;
+  price: number;
+  rsi: number;
+  ema20: number;
+  ema50: number;
+  sma20: number;
+  macd: any;
+  atr: number;
+  volumeRatio: number;
+  structure: ReturnType<typeof structureAnalysis>;
+}) {
+  return `
 You are NEXORA AI, a professional market-analysis engine.
 
-Asset: ${symbol}
-Analysis mode: ${mode}
+Asset: ${args.symbol}
+Timeframe: 1H
+Analysis mode: ${args.mode}
 
 Use ONLY the supplied market data.
-Do not invent prices, indicators, news, or events.
+Do not invent prices, indicators, news, events, session information, order blocks, or fair-value gaps.
 
 Technical:
-Price: ${price}
-RSI14: ${rsi}
-EMA20: ${ema20}
-EMA50: ${ema50}
-SMA20: ${sma20}
-MACD: ${JSON.stringify(macd)}
-ATR14: ${atr}
-Volume ratio: ${volumeRatio}
+Price: ${args.price}
+RSI14: ${args.rsi}
+EMA20: ${args.ema20}
+EMA50: ${args.ema50}
+SMA20: ${args.sma20}
+MACD: ${JSON.stringify(args.macd)}
+ATR14: ${args.atr}
+Volume ratio: ${args.volumeRatio}
 
 Market structure:
-${JSON.stringify(structure)}
+${JSON.stringify(args.structure)}
 
-For ${mode}, analyze the market appropriately.
+For this analysis, evaluate the requested mode using the supplied evidence.
+Technical: trend, momentum, RSI, EMA/SMA, MACD, ATR and volume.
+Price Action: swing highs/lows, break of structure, rejection and candle behavior.
+SMC: BOS, CHoCH, liquidity, order-block concepts and fair-value-gap concepts.
+ICT: liquidity sweeps, displacement, fair-value gaps, dealing range and premium/discount concepts.
 
-Technical:
-Focus on trend, momentum, RSI, EMA/SMA, MACD, ATR and volume.
-
-Price Action:
-Focus on swing highs/lows, break of structure, rejection and candle behavior.
-
-SMC:
-Focus on BOS, CHoCH, liquidity, order-block concepts and fair-value-gap concepts.
-Do not claim an order block or FVG exists unless the supplied price structure supports it.
-
-ICT:
-Focus on liquidity sweeps, displacement, fair-value gaps, dealing range and premium/discount concepts.
+Only claim an order block or FVG if the supplied structure directly supports it.
+Only claim liquidity sweeps when liquiditySweep is true.
 Do not invent session information.
 
-Return ONLY valid JSON:
-
+Return ONLY valid JSON with exactly these fields:
 {
   "verdict": "LONG" | "SHORT" | "WAIT",
   "confidence": number,
@@ -384,10 +255,108 @@ Be conservative.
 If evidence conflicts, return WAIT.
 No guaranteed-profit language.
 `;
+}
 
-    let ai: any;
+async function runAnalysis(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const body = await request.json().catch(() => ({}));
 
+  const symbol =
+    (typeof body.symbol === "string" && body.symbol.trim()
+      ? body.symbol.trim().toUpperCase()
+      : searchParams.get("symbol")) || "BTC/USD";
+
+  const mode =
+    (typeof body.mode === "string" && body.mode.trim()
+      ? body.mode.trim()
+      : searchParams.get("mode")) || "Technical";
+
+  if (!supportedSymbols.includes(symbol as (typeof supportedSymbols)[number])) {
+    return NextResponse.json(
+      { error: `Unsupported symbol: ${symbol}` },
+      { status: 400 }
+    );
+  }
+
+  const ohlcv = await fetchMarketData(symbol);
+
+  if (ohlcv.length < 60) {
+    return NextResponse.json(
+      { error: "Insufficient market candles for analysis" },
+      { status: 502 }
+    );
+  }
+
+  const closes = ohlcv.map((c) => c[4]);
+  const highs = ohlcv.map((c) => c[2]);
+  const lows = ohlcv.map((c) => c[3]);
+  const volumes = ohlcv.map((c) => c[5]);
+  const price = closes.at(-1) ?? 0;
+
+  const rsi = RSI.calculate({ period: 14, values: closes }).at(-1) ?? 50;
+  const ema20 = EMA.calculate({ period: 20, values: closes }).at(-1) ?? price;
+  const ema50 = EMA.calculate({ period: 50, values: closes }).at(-1) ?? price;
+  const sma20 = SMA.calculate({ period: 20, values: closes }).at(-1) ?? price;
+  const macd = MACD.calculate({
+    values: closes,
+    fastPeriod: 12,
+    slowPeriod: 26,
+    signalPeriod: 9,
+    SimpleMAOscillator: false,
+    SimpleMASignal: false,
+  }).at(-1);
+  const atr = ATR.calculate({
+    period: 14,
+    high: highs,
+    low: lows,
+    close: closes,
+  }).at(-1) ?? 0;
+
+  const recentVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+  const currentVolume = volumes.at(-1) ?? 0;
+  const volumeRatio = recentVolume > 0 ? currentVolume / recentVolume : 1;
+  const structure = structureAnalysis(ohlcv);
+
+  const latestCandleMs = ohlcv.at(-1)?.[0];
+  if (!latestCandleMs) {
+    return NextResponse.json(
+      { error: "Latest candle timestamp unavailable" },
+      { status: 502 }
+    );
+  }
+
+  const latestCandleTime = new Date(latestCandleMs).toISOString();
+  const supabase = getSupabase();
+
+  let ai: AiAnalysis | null = null;
+  let cacheHit = false;
+
+  const { data: cached, error: cacheReadError } = await supabase
+    .from("ai_analysis_cache")
+    .select("analysis,candle_time,expires_at")
+    .eq("symbol", symbol)
+    .eq("timeframe", timeframe)
+    .maybeSingle();
+
+  if (cacheReadError) {
+    console.warn("[NEXORA AI] cache read failed:", cacheReadError.message);
+  }
+
+  if (
+    cached?.analysis &&
+    cached.candle_time === latestCandleTime &&
+    cached.expires_at &&
+    new Date(cached.expires_at).getTime() > Date.now()
+  ) {
+    ai = normalizeAi(cached.analysis);
+    cacheHit = true;
+    console.log(`[NEXORA AI] cache hit ${symbol} ${timeframe} ${latestCandleTime}`);
+  }
+
+  if (!ai) {
     try {
+      console.log(`[NEXORA AI] real model call ${symbol} ${timeframe} ${latestCandleTime}`);
+
       const response = await getOpenAI().responses.create({
         model: "gpt-5.6-luna",
         input: [
@@ -398,7 +367,19 @@ No guaranteed-profit language.
           },
           {
             role: "user",
-            content: prompt,
+            content: buildPrompt({
+              symbol,
+              mode,
+              price,
+              rsi,
+              ema20,
+              ema50,
+              sma20,
+              macd,
+              atr,
+              volumeRatio,
+              structure,
+            }),
           },
         ],
         text: {
@@ -410,42 +391,19 @@ No guaranteed-profit language.
               type: "object",
               additionalProperties: false,
               properties: {
-                verdict: {
-                  type: "string",
-                  enum: ["LONG", "SHORT", "WAIT"],
-                },
-                confidence: {
-                  type: "number",
-                },
-                trend: {
-                  type: "string",
-                },
-                momentum: {
-                  type: "string",
-                },
-                reason: {
-                  type: "string",
-                },
-                risk: {
-                  type: "string",
-                },
-                entry: {
-                  type: "number",
-                },
-                stopLoss: {
-                  type: "number",
-                },
-                target1: {
-                  type: "number",
-                },
-                target2: {
-                  type: "number",
-                },
+                verdict: { type: "string", enum: ["LONG", "SHORT", "WAIT"] },
+                confidence: { type: "number" },
+                trend: { type: "string" },
+                momentum: { type: "string" },
+                reason: { type: "string" },
+                risk: { type: "string" },
+                entry: { type: "number" },
+                stopLoss: { type: "number" },
+                target1: { type: "number" },
+                target2: { type: "number" },
                 signals: {
                   type: "array",
-                  items: {
-                    type: "string",
-                  },
+                  items: { type: "string" },
                 },
               },
               required: [
@@ -466,13 +424,30 @@ No guaranteed-profit language.
         },
       });
 
-      ai = JSON.parse(response.output_text || "{}");
+      ai = normalizeAi(JSON.parse(response.output_text || "{}"));
 
-      if (!ai || typeof ai !== "object") {
-        throw new Error("OpenAI returned invalid analysis JSON");
+      const expiresAt = new Date(Date.now() + 75 * 60 * 1000).toISOString();
+
+      const { error: cacheWriteError } = await supabase
+        .from("ai_analysis_cache")
+        .upsert(
+          {
+            symbol,
+            timeframe,
+            candle_time: latestCandleTime,
+            analysis: ai,
+            expires_at: expiresAt,
+          },
+          { onConflict: "symbol,timeframe" }
+        );
+
+      if (cacheWriteError) {
+        console.warn("[NEXORA AI] cache write failed:", cacheWriteError.message);
+      } else {
+        console.log(`[NEXORA AI] cached real AI result ${symbol} ${timeframe}`);
       }
     } catch (aiError) {
-      console.warn("AI quota/error, using deterministic fallback:", aiError);
+      console.warn("[NEXORA AI] model error; using deterministic safety fallback:", aiError);
 
       const bullish =
         price > ema20 &&
@@ -489,19 +464,27 @@ No guaranteed-profit language.
         (macd?.histogram ?? 0) < 0;
 
       const verdict = bullish ? "LONG" : bearish ? "SHORT" : "WAIT";
+      const fallbackReason =
+        verdict === "LONG"
+          ? "Price is above EMA20/EMA50 with bullish momentum confirmation."
+          : verdict === "SHORT"
+            ? "Price is below EMA20/EMA50 with bearish momentum confirmation."
+            : "Technical evidence is mixed, so NEXORA AI recommends waiting.";
 
       ai = {
         verdict,
         confidence: verdict === "WAIT" ? 55 : 68,
+        trend: structure.marketStructure,
+        momentum: verdict === "LONG" ? "Bullish" : verdict === "SHORT" ? "Bearish" : "Mixed",
+        reason: fallbackReason,
+        reasoning: fallbackReason,
         risk: verdict === "WAIT" ? "HIGH" : "MEDIUM",
-        reasoning:
-          verdict === "LONG"
-            ? "Price is above EMA20/EMA50 with bullish momentum confirmation."
-            : verdict === "SHORT"
-            ? "Price is below EMA20/EMA50 with bearish momentum confirmation."
-            : "Technical evidence is mixed, so NEXORA AI recommends waiting.",
+        entry: price,
+        stopLoss: price,
+        target1: price,
+        target2: price,
         signals: [
-          `RSI: ${rsi}`,
+          `RSI: ${rsi.toFixed(2)}`,
           `EMA20: ${ema20.toFixed(2)}`,
           `EMA50: ${ema50.toFixed(2)}`,
           `MACD histogram: ${(macd?.histogram ?? 0).toFixed(2)}`,
@@ -510,64 +493,84 @@ No guaranteed-profit language.
         source: "NEXORA deterministic fallback",
       };
     }
+  }
 
-    // NEXORA deterministic risk engine.
-    // Trade levels are calculated from real market price + ATR,
-    // never invented by the AI model.
-    const riskMultiplier = 1.5;
-    const target1Multiplier = 2.25;
-    const target2Multiplier = 3.0;
+  ai.candleTime = latestCandleTime;
+  ai.cacheHit = cacheHit;
+  ai.reasoning = ai.reasoning || ai.reason;
 
-    const longStop = price - atr * riskMultiplier;
-    const shortStop = price + atr * riskMultiplier;
+  // Risk levels are always calculated from current market price + ATR.
+  const riskMultiplier = 1.5;
+  const target1Multiplier = 2.25;
+  const target2Multiplier = 3.0;
 
-    const longTarget1 = price + atr * target1Multiplier;
-    const longTarget2 = price + atr * target2Multiplier;
+  const longStop = price - atr * riskMultiplier;
+  const shortStop = price + atr * riskMultiplier;
+  const longTarget1 = price + atr * target1Multiplier;
+  const longTarget2 = price + atr * target2Multiplier;
+  const shortTarget1 = price - atr * target1Multiplier;
+  const shortTarget2 = price - atr * target2Multiplier;
 
-    const shortTarget1 = price - atr * target1Multiplier;
-    const shortTarget2 = price - atr * target2Multiplier;
+  if (ai.verdict === "LONG") {
+    ai.entry = price;
+    ai.stopLoss = longStop;
+    ai.target1 = longTarget1;
+    ai.target2 = longTarget2;
+  } else if (ai.verdict === "SHORT") {
+    ai.entry = price;
+    ai.stopLoss = shortStop;
+    ai.target1 = shortTarget1;
+    ai.target2 = shortTarget2;
+  } else {
+    ai.entry = price;
+    ai.stopLoss = Number.NaN;
+    ai.target1 = Number.NaN;
+    ai.target2 = Number.NaN;
+  }
 
-    if (ai.verdict === "LONG") {
-      ai.entry = price;
-      ai.stopLoss = longStop;
-      ai.target1 = longTarget1;
-      ai.target2 = longTarget2;
-    } else if (ai.verdict === "SHORT") {
-      ai.entry = price;
-      ai.stopLoss = shortStop;
-      ai.target1 = shortTarget1;
-      ai.target2 = shortTarget2;
-    } else {
-      ai.entry = price;
-      ai.stopLoss = null;
-      ai.target1 = null;
-      ai.target2 = null;
-    }
+  return NextResponse.json({
+    symbol,
+    timeframe,
+    mode,
+    price,
+    indicators: {
+      rsi,
+      ema20,
+      ema50,
+      sma20,
+      macd,
+      atr,
+      volumeRatio,
+    },
+    structure,
+    ai,
+    aiCache: {
+      hit: cacheHit,
+      candleTime: latestCandleTime,
+      expiresAfterMinutes: 75,
+    },
+  });
+}
 
-    return NextResponse.json({
-      symbol,
-      timeframe: "1h",
-      mode,
-      price,
-      indicators: {
-        rsi,
-        ema20,
-        ema50,
-        sma20,
-        macd,
-        atr,
-        volumeRatio,
-      },
-      structure,
-      ai,
-    });
+export async function POST(request: Request) {
+  try {
+    return await runAnalysis(request);
   } catch (error: any) {
     console.error(error);
-
     return NextResponse.json(
-      {
-        error: error?.message || "Analysis failed",
-      },
+      { error: error?.message || "Analysis failed" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    return await runAnalysis(request);
+  } catch (error: any) {
+    console.error(error);
+    return NextResponse.json(
+      { error: error?.message || "Analysis failed" },
       { status: 500 }
     );
   }
