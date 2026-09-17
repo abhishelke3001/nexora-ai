@@ -111,8 +111,8 @@ export async function GET(request: Request) {
       }));
     }
 
-    if (!values) {
-      throw new Error(`No technical market data available for ${symbol}`);
+    if (!values || values.length < 60) {
+      throw new Error(`Insufficient technical market data for ${symbol}`);
     }
 
     const highs = values.map((c) => c.high);
